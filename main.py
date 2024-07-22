@@ -1,4 +1,5 @@
 import argparse, os, sys, datetime, glob, importlib, csv
+import PIL.Image
 import numpy as np
 import time
 import torch
@@ -14,7 +15,7 @@ from PIL import Image
 from pytorch_lightning import seed_everything
 from pytorch_lightning.trainer import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint, Callback, LearningRateMonitor
-from pytorch_lightning.utilities.distributed import rank_zero_only
+from pytorch_lightning.utilities.rank_zero import rank_zero_only
 from pytorch_lightning.utilities import rank_zero_info
 
 from ldm.data.base import Txt2ImgIterableBaseDataset
@@ -125,7 +126,7 @@ def get_parser(**parser_kwargs):
 
 def nondefault_trainer_args(opt):
     parser = argparse.ArgumentParser()
-    parser = Trainer.add_argparse_args(parser)
+    # parser = Trainer.add_argparse_args(parser)
     args = parser.parse_args([])
     return sorted(k for k in vars(args) if getattr(opt, k) != getattr(args, k))
 
@@ -294,9 +295,9 @@ class ImageLogger(Callback):
         self.rescale = rescale
         self.batch_freq = batch_frequency
         self.max_images = max_images
-        self.logger_log_images = {
-            pl.loggers.TestTubeLogger: self._testtube,
-        }
+        # self.logger_log_images = {
+        #     pl.loggers.TestTubeLogger: self._testtube,
+        # }
         self.log_steps = [2 ** n for n in range(int(np.log2(self.batch_freq)) + 1)]
         if not increase_log_steps:
             self.log_steps = [self.batch_freq]
@@ -465,7 +466,7 @@ if __name__ == "__main__":
     sys.path.append(os.getcwd())
 
     parser = get_parser()
-    parser = Trainer.add_argparse_args(parser)
+    # parser = Trainer.add_argparse_args(parser)
 
     opt, unknown = parser.parse_known_args()
     if opt.name and opt.resume:
@@ -548,15 +549,15 @@ if __name__ == "__main__":
                     "id": nowname,
                 }
             },
-            "testtube": {
-                "target": "pytorch_lightning.loggers.TestTubeLogger",
+            "csvlogger": {
+                "target": "pytorch_lightning.loggers.CSVLogger",
                 "params": {
-                    "name": "testtube",
+                    "name": "csvlogger",
                     "save_dir": logdir,
                 }
             },
         }
-        default_logger_cfg = default_logger_cfgs["testtube"]
+        default_logger_cfg = default_logger_cfgs["csvlogger"]
         if "logger" in lightning_config:
             logger_cfg = lightning_config.logger
         else:
@@ -655,8 +656,8 @@ if __name__ == "__main__":
             del callbacks_cfg['ignore_keys_callback']
 
         trainer_kwargs["callbacks"] = [instantiate_from_config(callbacks_cfg[k]) for k in callbacks_cfg]
-
-        trainer = Trainer.from_argparse_args(trainer_opt, **trainer_kwargs)
+        # trainer = Trainer.from_argparse_args(trainer_opt, **trainer_kwargs)
+        trainer = Trainer(**trainer_kwargs)
         trainer.logdir = logdir  ###
 
         # data
@@ -692,33 +693,33 @@ if __name__ == "__main__":
             print("++++ NOT USING LR SCALING ++++")
             print(f"Setting learning rate to {model.learning_rate:.2e}")
 
-
-        # allow checkpointing via USR1
-        def melk(*args, **kwargs):
-            # run all checkpoint hooks
-            if trainer.global_rank == 0:
-                print("Summoning checkpoint.")
-                ckpt_path = os.path.join(ckptdir, "last.ckpt")
-                trainer.save_checkpoint(ckpt_path)
-
-
-        def divein(*args, **kwargs):
-            if trainer.global_rank == 0:
-                import pudb;
-                pudb.set_trace()
+        # Commented out due to running on windows
+        # # allow checkpointing via USR1
+        # def melk(*args, **kwargs):
+        #     # run all checkpoint hooks
+        #     if trainer.global_rank == 0:
+        #         print("Summoning checkpoint.")
+        #         ckpt_path = os.path.join(ckptdir, "last.ckpt")
+        #         trainer.save_checkpoint(ckpt_path)
 
 
-        import signal
+        # def divein(*args, **kwargs):
+        #     if trainer.global_rank == 0:
+        #         import pudb;
+        #         pudb.set_trace()
 
-        signal.signal(signal.SIGUSR1, melk)
-        signal.signal(signal.SIGUSR2, divein)
+
+        # import signal
+
+        # signal.signal(signal.SIGUSR1, melk)
+        # signal.signal(signal.SIGUSR2, divein)
 
         # run
         if opt.train:
             try:
                 trainer.fit(model, data)
             except Exception:
-                melk()
+                # melk()
                 raise
         if not opt.no_test and not trainer.interrupted:
             trainer.test(model, data)
