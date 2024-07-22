@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from contextlib import contextmanager
 
 from taming.modules.vqvae.quantize import VectorQuantizer2 as VectorQuantizer
+from ldm.modules.encoders.quantize import VectorQuantizer23D
 
 from ldm.modules.diffusionmodules.model import Encoder, Decoder, Encoder3D, Decoder3D
 from ldm.modules.distributions.distributions import DiagonalGaussianDistribution
@@ -307,7 +308,7 @@ class VQModel3D(pl.LightningModule):
         self.encoder = Encoder3D(**ddconfig)
         self.decoder = Decoder3D(**ddconfig)
         self.loss = instantiate_from_config(lossconfig)
-        self.quantize = VectorQuantizer(n_embed, embed_dim, beta=0.25,
+        self.quantize = VectorQuantizer23D(n_embed, embed_dim, beta=0.25,
                                         remap=remap,
                                         sane_index_shape=sane_index_shape)
         self.quant_conv = torch.nn.Conv3d(ddconfig["z_channels"], embed_dim, 1)
