@@ -2,6 +2,8 @@ import torch
 import pytorch_lightning as pl
 import torch.nn.functional as F
 from contextlib import contextmanager
+from packaging import version
+from typing import Mapping, Any
 
 from taming.modules.vqvae.quantize import VectorQuantizer2 as VectorQuantizer
 from ldm.modules.encoders.quantize import VectorQuantizer23D
@@ -389,9 +391,7 @@ class VQModel3D(pl.LightningModule):
 
     def forward(self, input, return_pred_indices=False):
         quant, diff, (_,_,ind) = self.encode(input)
-        print(quant.shape)
         dec = self.decode(quant)
-        print(dec.shape)
         if return_pred_indices:
             return dec, diff, ind
         return dec, diff
@@ -424,7 +424,8 @@ class VQModel3D(pl.LightningModule):
             # autoencode
         aeloss, log_dict_ae = self.loss(qloss, x, xrec, 0, self.global_step,
                                         last_layer=self.get_last_layer(), split="train",
-                                        predicted_indices=ind)
+                                        predicted_indices=None
+                                        )
 
         self.log_dict(log_dict_ae, prog_bar=False, logger=True, on_step=True, on_epoch=True)
         opt1.zero_grad()
@@ -438,7 +439,7 @@ class VQModel3D(pl.LightningModule):
                                         last_layer=self.get_last_layer(), split="train")
         self.log_dict(log_dict_disc, prog_bar=False, logger=True, on_step=True, on_epoch=True)
         opt2.zero_grad()
-        self.manual_backward(aeloss)
+        self.manual_backward(discloss)
         opt2.step()
         return discloss
 
@@ -455,20 +456,21 @@ class VQModel3D(pl.LightningModule):
                                         self.global_step,
                                         last_layer=self.get_last_layer(),
                                         split="val"+suffix,
-                                        # predicted_indices=ind
+                                        predicted_indices=None
                                         )
 
         discloss, log_dict_disc = self.loss(qloss, x, xrec, 1,
                                             self.global_step,
                                             last_layer=self.get_last_layer(),
                                             split="val"+suffix,
-                                            # predicted_indices=ind
+                                            predicted_indices=None
                                             )
         rec_loss = log_dict_ae[f"val{suffix}/rec_loss"]
         self.log(f"val{suffix}/rec_loss", rec_loss,
                    prog_bar=True, logger=True, on_step=False, on_epoch=True, sync_dist=True)
         self.log(f"val{suffix}/aeloss", aeloss,
                    prog_bar=True, logger=True, on_step=False, on_epoch=True, sync_dist=True)
+        
         if version.parse(pl.__version__) >= version.parse('1.4.0'):
             del log_dict_ae[f"val{suffix}/rec_loss"]
         self.log_dict(log_dict_ae)

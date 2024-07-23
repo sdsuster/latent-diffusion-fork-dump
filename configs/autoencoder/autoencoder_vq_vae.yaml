@@ -21,7 +21,7 @@ model:
       attn_resolutions: [8]
       dropout: 0.0
     lossconfig:
-      target: taming.modules.losses.vqperceptual.VQLPIPSWithDiscriminator
+      target: ldm.modules.losses.vqperceptual.VQLPIPS3DWithDiscriminator
       params:
         disc_conditional: False
         disc_in_channels: 1
