@@ -3,6 +3,7 @@ from torch import nn
 import torch.nn.functional as F
 from einops import repeat
 
+from ldm.modules.discriminator.model import NLayer3DDiscriminator, weights_init as n_layer_3d_discriminator
 from taming.modules.discriminator.model import NLayerDiscriminator, weights_init
 from taming.modules.losses.lpips import LPIPS
 from taming.modules.losses.vqperceptual import hinge_d_loss, vanilla_d_loss
@@ -172,7 +173,7 @@ class VQLPIPSWithDiscriminator(nn.Module):
 class VQLPIPS3DWithDiscriminator(nn.Module):
     def __init__(self, disc_start, codebook_weight=1.0, pixelloss_weight=1.0,
                  disc_num_layers=3, disc_in_channels=3, disc_factor=1.0, disc_weight=1.0,
-                 perceptual_weight=1.0, use_actnorm=False, disc_conditional=False,
+                 perceptual_weight=0.0, use_actnorm=False, disc_conditional=False,
                  disc_ndf=64, disc_loss="hinge", n_classes=None, perceptual_loss="lpips",
                  pixel_loss="l1"):
         super().__init__()
@@ -192,11 +193,11 @@ class VQLPIPS3DWithDiscriminator(nn.Module):
             self.pixel_loss = l1
         else:
             self.pixel_loss = l2
-        self.discriminator = NLayerDiscriminator(input_nc=disc_in_channels,
+        self.discriminator = NLayer3DDiscriminator(input_nc=disc_in_channels,
                                                  n_layers=disc_num_layers,
                                                  use_actnorm=use_actnorm,
                                                  ndf=disc_ndf
-                                                 ).apply(weights_init)
+                                                 ).apply(n_layer_3d_discriminator)
         self.discriminator_iter_start = disc_start
         if disc_loss == "hinge":
             self.disc_loss = hinge_d_loss
@@ -262,23 +263,15 @@ class VQLPIPS3DWithDiscriminator(nn.Module):
 
         # now the GAN part
         if optimizer_idx == 0:
-            reconstructions_grey = torch.squeeze(reconstructions, dim=0)
-
-            reconstructions_hcwd = rearrange(reconstructions_grey, 'c h w d -> h c w d')
-            reconstructions_wchd = rearrange(reconstructions_grey, 'c h w d -> w c h d')
-            reconstructions_dchw = rearrange(reconstructions_grey, 'c h w d -> d c h w')
-
             # generator update
             if cond is None:
                 assert not self.disc_conditional
-                logits_fake_hcwd = self.discriminator(reconstructions_hcwd.contiguous())
-                logits_fake_wchd = self.discriminator(reconstructions_wchd.contiguous())
-                logits_fake_dchw = self.discriminator(reconstructions_dchw.contiguous())
+                logits_fake = self.discriminator(reconstructions.contiguous())
             else:
                 #To Do: not updated yet
                 assert self.disc_conditional
                 logits_fake = self.discriminator(torch.cat((reconstructions.contiguous(), cond), dim=1))
-            g_loss = -torch.mean(logits_fake_hcwd) + -torch.mean(logits_fake_wchd) + -torch.mean(logits_fake_dchw)
+            g_loss = -torch.mean(logits_fake)
 
             try:
                 d_weight = self.calculate_adaptive_weight(nll_loss, g_loss, last_layer=last_layer)
@@ -307,44 +300,19 @@ class VQLPIPS3DWithDiscriminator(nn.Module):
             return loss, log
 
         if optimizer_idx == 1:
-            
-            inputs_grey = torch.squeeze(inputs, dim=0)
-            reconstructions_grey = torch.squeeze(reconstructions, dim=0)
-            
-            inputs_hcwd = rearrange(inputs_grey, 'c h w d -> h c w d')
-            reconstructions_hcwd = rearrange(reconstructions_grey, 'c h w d -> h c w d')
-
-            inputs_wchd = rearrange(inputs_grey, 'c h w d -> w c h d')
-            reconstructions_wchd = rearrange(reconstructions_grey, 'c h w d -> w c h d')
-
-            inputs_dchw = rearrange(inputs_grey, 'c h w d -> d c h w')
-            reconstructions_dchw = rearrange(reconstructions_grey, 'c h w d -> d c h w')
             # second pass for discriminator update
             if cond is None:
-                logits_real_hcwd = self.discriminator(inputs_hcwd.contiguous())
-                logits_real_wchd = self.discriminator(inputs_wchd.contiguous())
-                logits_real_dchw = self.discriminator(inputs_dchw.contiguous())
-                logits_fake_hcwd = self.discriminator(reconstructions_hcwd.contiguous().detach())
-                logits_fake_wchd = self.discriminator(reconstructions_wchd.contiguous().detach())
-                logits_fake_dchw = self.discriminator(reconstructions_dchw.contiguous().detach())
+                logits_real = self.discriminator(inputs.contiguous().detach())
+                logits_fake = self.discriminator(reconstructions.contiguous().detach())
             else:
-                #To Do: not updated yet
                 logits_real = self.discriminator(torch.cat((inputs.contiguous().detach(), cond), dim=1))
                 logits_fake = self.discriminator(torch.cat((reconstructions.contiguous().detach(), cond), dim=1))
 
             disc_factor = adopt_weight(self.disc_factor, global_step, threshold=self.discriminator_iter_start)
-            d_loss_hcwd = self.disc_loss(logits_real_hcwd, logits_fake_hcwd)
-            d_loss_wchd = self.disc_loss(logits_real_wchd, logits_fake_wchd)
-            d_loss_dchw = self.disc_loss(logits_real_dchw, logits_fake_dchw)
-
-            d_loss = disc_factor * ((d_loss_hcwd + d_loss_wchd + d_loss_dchw) / 3.)
+            d_loss = disc_factor * self.disc_loss(logits_real, logits_fake)
 
             log = {"{}/disc_loss".format(split): d_loss.clone().detach().mean(),
-                   "{}/logits_real_hcwd".format(split): logits_real_hcwd.detach().mean(),
-                   "{}/logits_real_wchd".format(split): logits_real_wchd.detach().mean(),
-                   "{}/logits_real_dchw".format(split): logits_real_dchw.detach().mean(),
-                   "{}/logits_fake_hcwd".format(split): logits_fake_hcwd.detach().mean(),
-                   "{}/logits_fake_wchd".format(split): logits_fake_wchd.detach().mean(),
-                   "{}/logits_fake_dchw".format(split): logits_fake_dchw.detach().mean(),
+                   "{}/logits_real".format(split): logits_real.detach().mean(),
+                   "{}/logits_fake".format(split): logits_fake.detach().mean()
                    }
             return d_loss, log

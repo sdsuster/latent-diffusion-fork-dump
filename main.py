@@ -2,6 +2,7 @@ import argparse, os, sys, datetime, glob, importlib, csv
 import PIL.Image
 import numpy as np
 import time
+import comet_ml
 import torch
 import torchvision
 import pytorch_lightning as pl
@@ -20,6 +21,8 @@ from pytorch_lightning.utilities import rank_zero_info
 
 from ldm.data.base import Txt2ImgIterableBaseDataset
 from ldm.util import instantiate_from_config
+import os
+from dotenv import load_dotenv
 
 
 def get_parser(**parser_kwargs):
@@ -457,7 +460,8 @@ if __name__ == "__main__":
     #           target: importpath
     #           params:
     #               key: value
-
+    
+    load_dotenv()
     now = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
 
     # add cwd for convenience and to make classes in this file available when
@@ -556,8 +560,15 @@ if __name__ == "__main__":
                     "save_dir": logdir,
                 }
             },
+            "comet-ml":{
+                "target": "pytorch_lightning.loggers.CometLogger",
+                "params": {
+                    "api_key": os.getenv('COMET_API_KEY'),
+                    "project_name": "LDM"
+                }
+            }
         }
-        default_logger_cfg = default_logger_cfgs["csvlogger"]
+        default_logger_cfg = default_logger_cfgs["comet-ml"]
         if "logger" in lightning_config:
             logger_cfg = lightning_config.logger
         else:
@@ -604,14 +615,14 @@ if __name__ == "__main__":
                     "lightning_config": lightning_config,
                 }
             },
-            "image_logger": {
-                "target": "main.ImageLogger",
-                "params": {
-                    "batch_frequency": 750,
-                    "max_images": 4,
-                    "clamp": True
-                }
-            },
+            # "image_logger": {
+            #     "target": "main.ImageLogger",
+            #     "params": {
+            #         "batch_frequency": 750,
+            #         "max_images": 4,
+            #         "clamp": True
+            #     }
+            # },
             "learning_rate_logger": {
                 "target": "main.LearningRateMonitor",
                 "params": {

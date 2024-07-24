@@ -13,7 +13,7 @@ brats_transforms = transforms.Compose(
         transforms.CropForegroundd(keys=["image"], allow_smaller=True, source_key="image", allow_missing_keys=True),
         transforms.SpatialPadd(keys=["image"], spatial_size=(160, 160, 126), allow_missing_keys=True),
         transforms.RandSpatialCropd( keys=["image"],
-            roi_size=(80, 80, 68),
+            roi_size=(80, 80, 60),
             random_center=True, 
             random_size=False,
         ),
