@@ -44,13 +44,13 @@ data:
         data_path: D:\Datasets\BraTS2020\BraTS2020_ValidationData\MICCAI_BraTS2020_ValidationData # to be filled
 
 lightning:
-  callbacks:
-    image_logger:
-      target: main.ImageLogger
-      params:
-        batch_frequency: 5000
-        max_images: 8
-        increase_log_steps: False
+  # callbacks:
+  #   image_logger:
+  #     target: main.ImageLogger
+  #     params:
+  #       batch_frequency: 5000
+  #       max_images: 8
+  #       increase_log_steps: False
 
   trainer:
     benchmark: True

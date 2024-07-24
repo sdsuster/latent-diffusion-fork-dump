@@ -172,7 +172,7 @@ class VQLPIPSWithDiscriminator(nn.Module):
 class VQLPIPS3DWithDiscriminator(nn.Module):
     def __init__(self, disc_start, codebook_weight=1.0, pixelloss_weight=1.0,
                  disc_num_layers=3, disc_in_channels=3, disc_factor=1.0, disc_weight=1.0,
-                 perceptual_weight=1.0, use_actnorm=False, disc_conditional=False,
+                 perceptual_weight=0.0, use_actnorm=False, disc_conditional=False,
                  disc_ndf=64, disc_loss="hinge", n_classes=None, perceptual_loss="lpips",
                  pixel_loss="l1"):
         super().__init__()
@@ -278,7 +278,7 @@ class VQLPIPS3DWithDiscriminator(nn.Module):
                 #To Do: not updated yet
                 assert self.disc_conditional
                 logits_fake = self.discriminator(torch.cat((reconstructions.contiguous(), cond), dim=1))
-            g_loss = -torch.mean(logits_fake_hcwd) + -torch.mean(logits_fake_wchd) + -torch.mean(logits_fake_dchw)
+            g_loss = (-torch.mean(logits_fake_hcwd) + -torch.mean(logits_fake_wchd) + -torch.mean(logits_fake_dchw))/3.
 
             try:
                 d_weight = self.calculate_adaptive_weight(nll_loss, g_loss, last_layer=last_layer)
