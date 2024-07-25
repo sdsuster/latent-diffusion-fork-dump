@@ -343,7 +343,7 @@ class ImageLogger(Callback):
             image = Image.fromarray(grid)
             image.save(path)
             try:
-                logger.experiment.log_image(image, name=filename)
+                logger.experiment.log_image(image, name=f"{split}_{filename}")
             except:
                 pass
     def log_img(self, pl_module, batch, batch_idx, split="train"):
@@ -545,7 +545,7 @@ if __name__ == "__main__":
         model = instantiate_from_config(config.model)
 
         # trainer and callbacks
-        trainer_kwargs = dict()
+        trainer_kwargs = {**trainer_config}
 
         # default logger configs
         default_logger_cfgs = {

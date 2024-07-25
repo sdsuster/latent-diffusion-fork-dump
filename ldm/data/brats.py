@@ -4,30 +4,30 @@ from monai import transforms
 from monai.data import Dataset as MonaiDataset
 from torch.utils.data import Dataset
 
-brats_transforms = transforms.Compose(
-    [
-        transforms.LoadImaged(keys=["image"], allow_missing_keys=True),
-        transforms.EnsureChannelFirstd(keys=["image"], allow_missing_keys=True),
-        transforms.EnsureTyped(keys=["image"]),
-        transforms.Orientationd(keys=["image"], axcodes="RAI", allow_missing_keys=True),
-        transforms.CropForegroundd(keys=["image"], allow_smaller=True, source_key="image", allow_missing_keys=True),
-        transforms.SpatialPadd(keys=["image"], spatial_size=(160, 160, 126), allow_missing_keys=True),
-        transforms.RandSpatialCropd( keys=["image"],
-            roi_size=(80, 80, 60),
-            random_center=True, 
-            random_size=False,
-        ),
-        # transforms.Resized( keys=["image"],
-        #     spatial_size=(80, 80, 60),
-        #     anti_aliasing=True, 
-        # ),
-        transforms.ScaleIntensityRangePercentilesd(keys=["image"], lower=0, upper=99.75, b_min=0, b_max=1),
-    ]
-)
 
 
-def get_brats_dataset(data_path):
-    transform = brats_transforms
+def get_brats_dataset(data_path, pad_size = [160, 160, 126], crop_size = [160, 160, 126]):
+        
+    transform = transforms.Compose(
+        [
+            transforms.LoadImaged(keys=["image"], allow_missing_keys=True),
+            transforms.EnsureChannelFirstd(keys=["image"], allow_missing_keys=True),
+            transforms.EnsureTyped(keys=["image"]),
+            transforms.Orientationd(keys=["image"], axcodes="RAI", allow_missing_keys=True),
+            transforms.CropForegroundd(keys=["image"], allow_smaller=True, source_key="image", allow_missing_keys=True),
+            transforms.SpatialPadd(keys=["image"], spatial_size=pad_size, allow_missing_keys=True),
+            transforms.RandSpatialCropd( keys=["image"],
+                roi_size=crop_size,
+                random_center=True, 
+                random_size=False,
+            ),
+            # transforms.Resized( keys=["image"],
+            #     spatial_size=(80, 80, 60),
+            #     anti_aliasing=True, 
+            # ),
+            transforms.ScaleIntensityRangePercentilesd(keys=["image"], lower=0, upper=99.75, b_min=0, b_max=1),
+        ]
+    )
     
     data = []
     for subject in os.listdir(data_path):
@@ -43,9 +43,10 @@ def get_brats_dataset(data_path):
 
     return MonaiDataset(data=data, transform=transform)
 class BratsDataset(Dataset):
-    def __init__(self,data_path):
+    
+    def __init__(self,data_path, pad_size = [160, 160, 126], crop_size = [160, 160, 126]):
         super().__init__()
-        self.data = get_brats_dataset(data_path)
+        self.data = get_brats_dataset(data_path, pad_size, crop_size)
 
     def __len__(self):
         return len(self.data)

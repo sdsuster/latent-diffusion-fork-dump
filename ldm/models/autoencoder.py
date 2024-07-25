@@ -418,8 +418,9 @@ class VQModel3D(pl.LightningModule):
         # https://github.com/pytorch/pytorch/issues/37142
         # try not to fool the heuristics
         x = self.get_input(batch, self.image_key)
+        opt1, opt2 = self.optimizers()
         xrec, qloss, ind = self(x, return_pred_indices=True)
-        opt1, opt2 = self.optimizers()  
+        
         # if optimizer_idx == 0:
             # autoencode
         aeloss, log_dict_ae = self.loss(qloss, x, xrec, 0, self.global_step,

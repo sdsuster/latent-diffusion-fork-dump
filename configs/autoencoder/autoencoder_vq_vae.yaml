@@ -38,10 +38,18 @@ data:
       target: ldm.data.brats.BratsDataset
       params:
         data_path: D:\Datasets\BraTS2020\BraTS2020_TrainingData\MICCAI_BraTS2020_TrainingData # to be filled
+        crop_size: #h,w,d
+          - 80
+          - 80
+          - 60
     validation:
       target: ldm.data.brats.BratsDataset
       params:
         data_path: D:\Datasets\BraTS2020\BraTS2020_ValidationData\MICCAI_BraTS2020_ValidationData # to be filled
+        crop_size: #h,w,d
+          - 80
+          - 80
+          - 60
 
 lightning:
   callbacks:
