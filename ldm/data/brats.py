@@ -17,6 +17,10 @@ brats_transforms = transforms.Compose(
             random_center=True, 
             random_size=False,
         ),
+        # transforms.Resized( keys=["image"],
+        #     spatial_size=(80, 80, 60),
+        #     anti_aliasing=True, 
+        # ),
         transforms.ScaleIntensityRangePercentilesd(keys=["image"], lower=0, upper=99.75, b_min=0, b_max=1),
     ]
 )
@@ -30,6 +34,8 @@ def get_brats_dataset(data_path):
         sub_path = os.path.join(data_path, subject)
         if os.path.exists(sub_path) == False or os.path.isdir(sub_path) is False: continue
         for files in os.listdir(sub_path):
+            if 'seg' in files:
+                continue
             image = os.path.join(sub_path, files) 
             data.append({"image":image, "subject_id": subject})
                     

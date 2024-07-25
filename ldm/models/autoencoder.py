@@ -521,27 +521,15 @@ class VQModel3D(pl.LightningModule):
             log["inputs"] = x
             return log
         xrec, _ = self(x)
-        if x.shape[1] > 3:
-            # colorize with random projection
-            assert xrec.shape[1] > 3
-            x = self.to_rgb(x)
-            xrec = self.to_rgb(xrec)
-        log["inputs"] = x
-        log["reconstructions"] = xrec
+        
+        log["inputs"] = x[:, :, :, :, 30]
+        log["reconstructions"] = xrec[:, :, :, :, 30]
         if plot_ema:
             with self.ema_scope():
                 xrec_ema, _ = self(x)
                 if x.shape[1] > 3: xrec_ema = self.to_rgb(xrec_ema)
                 log["reconstructions_ema"] = xrec_ema
         return log
-
-    def to_rgb(self, x):
-        assert self.image_key == "segmentation"
-        if not hasattr(self, "colorize"):
-            self.register_buffer("colorize", torch.randn(3, x.shape[1], 1, 1).to(x))
-        x = F.conv2d(x, weight=self.colorize)
-        x = 2.*(x-x.min())/(x.max()-x.min()) - 1.
-        return x
 
 
 class VQModel3dInterface(VQModel3D):
