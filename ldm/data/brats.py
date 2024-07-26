@@ -6,7 +6,7 @@ from torch.utils.data import Dataset
 
 
 
-def get_brats_dataset(data_path, pad_size = [160, 160, 126], crop_size = [160, 160, 126]):
+def get_brats_dataset(data_path, pad_size = [160, 160, 126], crop_size = [160, 160, 126], resize = None):
         
     transform = transforms.Compose(
         [
@@ -16,15 +16,18 @@ def get_brats_dataset(data_path, pad_size = [160, 160, 126], crop_size = [160, 1
             transforms.Orientationd(keys=["image"], axcodes="RAI", allow_missing_keys=True),
             transforms.CropForegroundd(keys=["image"], allow_smaller=True, source_key="image", allow_missing_keys=True),
             transforms.SpatialPadd(keys=["image"], spatial_size=pad_size, allow_missing_keys=True),
-            transforms.RandSpatialCropd( keys=["image"],
-                roi_size=crop_size,
-                random_center=True, 
-                random_size=False,
-            ),
-            # transforms.Resized( keys=["image"],
-            #     spatial_size=(80, 80, 60),
-            #     anti_aliasing=True, 
-            # ),
+            
+            transforms.Identityd(keys=["image"]) if resize is None else
+                transforms.Resized( keys=["image"],
+                    spatial_size=(80, 80, 60),
+                    anti_aliasing=True, 
+                ),
+            transforms.Identityd(keys=["image"]) if crop_size is None else
+                transforms.RandSpatialCropd( keys=["image"],
+                    roi_size=crop_size,
+                    random_center=True, 
+                    random_size=False,
+                ),
             transforms.ScaleIntensityRangePercentilesd(keys=["image"], lower=0, upper=99.75, b_min=0, b_max=1),
         ]
     )

@@ -63,3 +63,4 @@ lightning:
 
   trainer:
     benchmark: True
+    logger: Null
