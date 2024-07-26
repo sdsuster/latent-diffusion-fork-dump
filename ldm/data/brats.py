@@ -47,9 +47,9 @@ def get_brats_dataset(data_path, pad_size = [160, 160, 126], crop_size = [160, 1
     return MonaiDataset(data=data, transform=transform)
 class BratsDataset(Dataset):
     
-    def __init__(self,data_path, pad_size = [160, 160, 126], crop_size = [160, 160, 126]):
+    def __init__(self,data_path, pad_size = [160, 160, 126], crop_size = [160, 160, 126], resize = None):
         super().__init__()
-        self.data = get_brats_dataset(data_path, pad_size, crop_size)
+        self.data = get_brats_dataset(data_path, pad_size, crop_size, resize)
 
     def __len__(self):
         return len(self.data)
