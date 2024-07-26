@@ -382,7 +382,8 @@ class ImageLogger(Callback):
         if ((check_idx % self.batch_freq) == 0 or (check_idx in self.log_steps)) and (
                 check_idx > 0 or self.log_first_step):
             try:
-                self.log_steps.pop(0)
+                if len(self.log_steps) > 0:
+                    self.log_steps.pop(0)
             except IndexError as e:
                 print(e)
                 pass
