@@ -666,11 +666,11 @@ class Encoder3D(nn.Module):
                                        out_channels=block_in,
                                        temb_channels=self.temb_ch,
                                        dropout=dropout)
-        # self.mid.attn_1 = make_attn(block_in, attn_type=attn_type)
-        # self.mid.block_2 = ResnetBlock3D(in_channels=block_in,
-        #                                out_channels=block_in,
-        #                                temb_channels=self.temb_ch,
-        #                                dropout=dropout)
+        self.mid.attn_1 = make_attn(block_in, attn_type=attn_type)
+        self.mid.block_2 = ResnetBlock3D(in_channels=block_in,
+                                       out_channels=block_in,
+                                       temb_channels=self.temb_ch,
+                                       dropout=dropout)
 
         # end
         self.norm_out = Normalize(block_in)
@@ -698,8 +698,8 @@ class Encoder3D(nn.Module):
         # middle
         h = hs[-1]
         h = self.mid.block_1(h, temb)
-        # h = self.mid.attn_1(h)
-        # h = self.mid.block_2(h, temb)
+        h = self.mid.attn_1(h)
+        h = self.mid.block_2(h, temb)
 
         # end
         h = self.norm_out(h)
@@ -852,11 +852,11 @@ class Decoder3D(nn.Module):
                                        out_channels=block_in,
                                        temb_channels=self.temb_ch,
                                        dropout=dropout)
-        # self.mid.attn_1 = make_attn(block_in, attn_type=attn_type)
-        # self.mid.block_2 = ResnetBlock3D(in_channels=block_in,
-        #                                out_channels=block_in,
-        #                                temb_channels=self.temb_ch,
-        #                                dropout=dropout)
+        self.mid.attn_1 = make_attn(block_in, attn_type=attn_type)
+        self.mid.block_2 = ResnetBlock3D(in_channels=block_in,
+                                       out_channels=block_in,
+                                       temb_channels=self.temb_ch,
+                                       dropout=dropout)
 
         # upsampling
         self.up = nn.ModuleList()
@@ -900,8 +900,8 @@ class Decoder3D(nn.Module):
 
         # middle
         h = self.mid.block_1(h, temb)
-        # h = self.mid.attn_1(h)
-        # h = self.mid.block_2(h, temb)
+        h = self.mid.attn_1(h)
+        h = self.mid.block_2(h, temb)
 
         # upsampling
         for i_level in reversed(range(self.num_resolutions)):
