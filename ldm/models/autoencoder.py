@@ -519,7 +519,7 @@ class VQModel3D(pl.LightningModule):
         x = self.get_input(batch, self.image_key)
         x = x.to(self.device)
         if only_inputs:
-            log["inputs"] = x
+            log["inputs"] = x[:, :, :, :, 30]
             return log
         xrec, _ = self(x)
         

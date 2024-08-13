@@ -234,17 +234,17 @@ class VQLPIPS3DWithDiscriminator(nn.Module):
         #rec_loss = torch.abs(inputs.contiguous() - reconstructions.contiguous())
 
         #calculate loss dimension-wise
-        inputs_rgb = torch.squeeze(inputs.expand(-1, 3, -1, -1, -1))
-        reconstructions_rgb = torch.squeeze(reconstructions.expand(-1, 3, -1, -1, -1))
+        # inputs_rgb = torch.squeeze(inputs.expand(-1, 3, -1, -1, -1))
+        # reconstructions_rgb = torch.squeeze(reconstructions.expand(-1, 3, -1, -1, -1))
         
-        inputs_hcwd = rearrange(inputs_rgb, 'c h w d -> h c w d')
-        reconstructions_hcwd = rearrange(reconstructions_rgb, 'c h w d -> h c w d')
+        # inputs_hcwd = rearrange(inputs_rgb, 'c h w d -> h c w d')
+        # reconstructions_hcwd = rearrange(reconstructions_rgb, 'c h w d -> h c w d')
 
-        inputs_wchd = rearrange(inputs_rgb, 'c h w d -> w c h d')
-        reconstructions_wchd = rearrange(reconstructions_rgb, 'c h w d -> w c h d')
+        # inputs_wchd = rearrange(inputs_rgb, 'c h w d -> w c h d')
+        # reconstructions_wchd = rearrange(reconstructions_rgb, 'c h w d -> w c h d')
 
-        inputs_dchw = rearrange(inputs_rgb, 'c h w d -> d c h w')
-        reconstructions_dchw = rearrange(reconstructions_rgb, 'c h w d -> d c h w')
+        # inputs_dchw = rearrange(inputs_rgb, 'c h w d -> d c h w')
+        # reconstructions_dchw = rearrange(reconstructions_rgb, 'c h w d -> d c h w')
 
 
         rec_loss = self.pixel_loss(inputs.contiguous(), reconstructions.contiguous())
