@@ -531,7 +531,7 @@ if __name__ == "__main__":
         # merge trainer cli with config
         trainer_config = lightning_config.get("trainer", OmegaConf.create())
         # default to ddp
-        trainer_config["accelerator"] = "ddp"
+        trainer_config["accelerator"] = "auto"
         for k in nondefault_trainer_args(opt):
             trainer_config[k] = getattr(opt, k)
         if not "gpus" in trainer_config:
@@ -576,7 +576,10 @@ if __name__ == "__main__":
                 }
             }
         }
-        default_logger_cfg = default_logger_cfgs["comet-ml"]
+        if "default_logger" in lightning_config:
+            default_logger_cfg = default_logger_cfgs[lightning_config.default_logger]
+        else:
+            default_logger_cfg = default_logger_cfgs["comet-ml"]
         if "logger" in lightning_config:
             logger_cfg = lightning_config.logger
         else:
