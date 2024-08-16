@@ -57,3 +57,11 @@ class BratsDataset(Dataset):
     def __getitem__(self, i):
         return self.data[i]
 
+
+class BratsDatasetTPU(BratsDataset):
+
+    def __getitem__(self, i):
+        example = {}
+        meta = self.data[i]['image']
+        example['image'] = meta.numpy()
+        return example

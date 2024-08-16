@@ -1,16 +1,13 @@
-name: ldm
+name: ldm-tpu
 channels:
-  - pytorch
-  - nvidia
   - defaults
 dependencies:
   - python=3.10
   - pip
-  - pytorch-cuda=12.1
-  - pytorch=2.4.0
-  - torchvision=0.19.0
-  - numpy
   - pip:
+    - torch==2.4.0
+    - torchvision==0.19.0
+    - numpy
     - albumentations
     - opencv-python
     - pudb==2019.2
@@ -23,6 +20,7 @@ dependencies:
     - einops==0.3.0
     - torch-fidelity==0.3.0
     - transformers
+    - torch_xla[tpu] -f https://storage.googleapis.com/libtpu-releases/index.html
     - monai
     - nibabel
     - python-dotenv
@@ -30,3 +28,7 @@ dependencies:
     - -e git+https://github.com/CompVis/taming-transformers.git@master#egg=taming-transformers
     - -e git+https://github.com/openai/CLIP.git@main#egg=clip
     - -e .
+
+  # export PATH="$PATH:~/miniconda3/envs/bin/ldm-tpu/bin"
+  # export PATH=$PATH:$CONDA_PREFIX/bin
+  # export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$CONDA_PREFIX/lib

@@ -240,7 +240,6 @@ class DataModuleFromConfig(pl.LightningDataModule):
         return DataLoader(self.datasets["predict"], batch_size=self.batch_size,
                           num_workers=self.num_workers, worker_init_fn=init_fn)
 
-
 class SetupCallback(Callback):
     def __init__(self, resume, now, logdir, ckptdir, cfgdir, config, lightning_config):
         super().__init__()
@@ -252,18 +251,22 @@ class SetupCallback(Callback):
         self.config = config
         self.lightning_config = lightning_config
 
-    def on_keyboard_interrupt(self, trainer, pl_module):
-        if trainer.global_rank == 0:
-            print("Summoning checkpoint.")
-            ckpt_path = os.path.join(self.ckptdir, "last.ckpt")
-            trainer.save_checkpoint(ckpt_path)
+    # def on_keyboard_interrupt(self, trainer, pl_module):
+    #     if trainer.global_rank == 0:
+    #         print("Summoning checkpoint.")
+    #         ckpt_path = os.path.join(self.ckptdir, "last.ckpt")
+    #         trainer.save_checkpoint(ckpt_path)
 
-    def on_pretrain_routine_start(self, trainer, pl_module):
+    def on_fit_start(self, trainer, pl_module):
         if trainer.global_rank == 0:
             # Create logdirs and save configs
             os.makedirs(self.logdir, exist_ok=True)
             os.makedirs(self.ckptdir, exist_ok=True)
             os.makedirs(self.cfgdir, exist_ok=True)
+
+            from pytorch_lightning.loggers import CometLogger
+            if isinstance(trainer.logger, CometLogger) and not bool(self.resume):
+                self.lightning_config.comet_experiment_key = trainer.logger._experiment_key
 
             if "callbacks" in self.lightning_config:
                 if 'metrics_over_trainsteps_checkpoint' in self.lightning_config['callbacks']:
@@ -293,12 +296,13 @@ class SetupCallback(Callback):
 class ImageLogger(Callback):
     def __init__(self, batch_frequency, max_images, clamp=True, increase_log_steps=True,
                  rescale=True, disabled=False, log_on_batch_idx=False, log_first_step=False,
-                 log_images_kwargs=None, save_dir=None):
+                 log_images_kwargs=None, save_dir=None, save_local=False):
         super().__init__()
         self.rescale = rescale
         self.batch_freq = batch_frequency
         self.max_images = max_images
         self.save_dir = save_dir
+        self.save_local = save_local
         # self.logger_log_images = {
         #     pl.loggers.TestTubeLogger: self._testtube,
         # }
@@ -343,7 +347,8 @@ class ImageLogger(Callback):
             path = os.path.join(root, filename)
             os.makedirs(os.path.split(path)[0], exist_ok=True)
             image = Image.fromarray(grid)
-            image.save(path)
+            if self.save_local:
+                image.save(path)
             try:
                 logger.experiment.log_image(image, name=f"{split}_{filename}")
             except:
@@ -525,8 +530,8 @@ if __name__ == "__main__":
     try:
         # init and save configs
         configs = [OmegaConf.load(cfg) for cfg in opt.base]
-        cli = OmegaConf.from_dotlist(unknown)
-        config = OmegaConf.merge(*configs, cli)
+        # cli = OmegaConf.from_dotlist(unknown) depreceted not supported yet
+        config = OmegaConf.merge(*configs)
         lightning_config = config.pop("lightning", OmegaConf.create())
         # merge trainer cli with config
         trainer_config = lightning_config.get("trainer", OmegaConf.create())
@@ -534,7 +539,7 @@ if __name__ == "__main__":
         trainer_config["accelerator"] = "auto"
         for k in nondefault_trainer_args(opt):
             trainer_config[k] = getattr(opt, k)
-        if not "gpus" in trainer_config:
+        if not "gpus" in trainer_config and not "tpus" in trainer_config:
             del trainer_config["accelerator"]
             cpu = True
         else:
@@ -544,6 +549,8 @@ if __name__ == "__main__":
         trainer_opt = argparse.Namespace(**trainer_config)
         lightning_config.trainer = trainer_config
 
+        if "profiler" in trainer_config:
+            config.model['profiler'] = trainer_config.profiler
         # model
         model = instantiate_from_config(config.model)
 
@@ -580,6 +587,7 @@ if __name__ == "__main__":
             default_logger_cfg = default_logger_cfgs[lightning_config.default_logger]
         else:
             default_logger_cfg = default_logger_cfgs["comet-ml"]
+            if opt.resume: default_logger_cfg['params']['experiment_key'] = lightning_config.comet_experiment_key
         if "logger" in lightning_config:
             logger_cfg = lightning_config.logger
         else:
@@ -642,9 +650,9 @@ if __name__ == "__main__":
                     # "log_momentum": True
                 }
             },
-            "cuda_callback": {
-                "target": "main.CUDACallback"
-            },
+            # "cuda_callback": {
+            #     "target": "main.CUDACallback"
+            # },
         }
         if version.parse(pl.__version__) >= version.parse('1.4.0'):
             default_callbacks_cfg.update({'checkpoint_callback': modelckpt_cfg})
@@ -677,7 +685,7 @@ if __name__ == "__main__":
             callbacks_cfg.ignore_keys_callback.params['ckpt_path'] = trainer_opt.resume_from_checkpoint
         elif 'ignore_keys_callback' in callbacks_cfg:
             del callbacks_cfg['ignore_keys_callback']
-
+            
         trainer_kwargs["callbacks"] = [instantiate_from_config(callbacks_cfg[k]) for k in callbacks_cfg]
         # trainer = Trainer.from_argparse_args(trainer_opt, **trainer_kwargs)
         trainer = Trainer(**trainer_kwargs)
@@ -688,11 +696,11 @@ if __name__ == "__main__":
         # NOTE according to https://pytorch-lightning.readthedocs.io/en/latest/datamodules.html
         # calling these ourselves should not be necessary but it is.
         # lightning still takes care of proper multiprocessing though
-        data.prepare_data()
-        data.setup()
-        print("#### Data #####")
-        for k in data.datasets:
-            print(f"{k}, {data.datasets[k].__class__.__name__}, {len(data.datasets[k])}")
+        # data.prepare_data()
+        # data.setup()
+        # print("#### Data #####")
+        # for k in data.datasets:
+        #     print(f"{k}, {data.datasets[k].__class__.__name__}, {len(data.datasets[k])}")
 
         # configure learning rate
         bs, base_lr = config.data.params.batch_size, config.model.base_learning_rate
@@ -740,7 +748,7 @@ if __name__ == "__main__":
         # run
         if opt.train:
             try:
-                trainer.fit(model, data)
+                trainer.fit(model, data, ckpt_path=opt.resume_from_checkpoint if "resume_from_checkpoint" in opt else None)
             except Exception:
                 # melk()
                 raise

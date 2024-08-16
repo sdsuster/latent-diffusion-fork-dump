@@ -517,7 +517,7 @@ class VQModel3D(pl.LightningModule):
     def log_images(self, batch, only_inputs=False, plot_ema=False, **kwargs):
         log = dict()
         x = self.get_input(batch, self.image_key)
-        x = x.to(self.device)
+        # x = x.to(self.device)
         if only_inputs:
             log["inputs"] = x[:, :, :, :, 30]
             return log
