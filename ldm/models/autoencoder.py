@@ -301,7 +301,8 @@ class VQModel3D(pl.LightningModule):
                  lr_g_factor=1.0,
                  remap=None,
                  sane_index_shape=False, # tell vector quantizer to return indices as bhw
-                 use_ema=False
+                 use_ema=False,
+                 profiler=None
                  ):
         super().__init__()
         self.embed_dim = embed_dim
@@ -334,6 +335,9 @@ class VQModel3D(pl.LightningModule):
         self.scheduler_config = scheduler_config
         self.lr_g_factor = lr_g_factor
         self.automatic_optimization = False
+        self.profiler = profiler
+        if self.profiler is not None:
+            print('Running profilling with', profiler)
 
     @contextmanager
     def ema_scope(self, context=None):
