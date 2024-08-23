@@ -106,8 +106,7 @@ class Vit_VQ_Trainer(pl.LightningModule):
                 if x.shape[1] > 3: xrec_ema = self.to_rgb(xrec_ema)
                 log["reconstructions_ema"] = xrec_ema
         return log
-    
-    
+
     def validation_step(self, batch, batch_idx):
         log_dict = self._validation_step(batch, batch_idx)
         return log_dict
@@ -119,25 +118,27 @@ class Vit_VQ_Trainer(pl.LightningModule):
                                         self.global_step,
                                         last_layer=self.get_last_layer(),
                                         split="val"+suffix,
-                                        predicted_indices=ind
+                                        predicted_indices=None
                                         )
 
         discloss, log_dict_disc = self.loss(qloss, x, xrec, 1,
                                             self.global_step,
                                             last_layer=self.get_last_layer(),
                                             split="val"+suffix,
-                                            predicted_indices=ind
+                                            predicted_indices=None
                                             )
         rec_loss = log_dict_ae[f"val{suffix}/rec_loss"]
         self.log(f"val{suffix}/rec_loss", rec_loss,
                    prog_bar=True, logger=True, on_step=False, on_epoch=True, sync_dist=True)
         self.log(f"val{suffix}/aeloss", aeloss,
                    prog_bar=True, logger=True, on_step=False, on_epoch=True, sync_dist=True)
+        
         if version.parse(pl.__version__) >= version.parse('1.4.0'):
             del log_dict_ae[f"val{suffix}/rec_loss"]
         self.log_dict(log_dict_ae)
         self.log_dict(log_dict_disc)
         return self.log_dict
+    
 class VQ_GanBase(ABC, torch.nn.Module):
     
     def __init__(self,
