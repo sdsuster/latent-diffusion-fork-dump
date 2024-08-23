@@ -707,7 +707,15 @@ if __name__ == "__main__":
         if not cpu:
             ngpu = len(lightning_config.trainer.gpus.strip(",").split(','))
         else:
-            ngpu = 1
+            tpu_count = 0
+            ngpu = 0
+            try:
+                import torch_xla.core.xla_model as xm
+                tpu_count = xm.xrt_world_size() if xm.xla_device_hw() == 'TPU' else 0
+                ngpu = tpu_count
+            except:
+                pass
+                ngpu = torch.cuda.device_count()
         if 'accumulate_grad_batches' in lightning_config.trainer:
             accumulate_grad_batches = lightning_config.trainer.accumulate_grad_batches
         else:
