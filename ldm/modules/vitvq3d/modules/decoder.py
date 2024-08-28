@@ -12,16 +12,16 @@ class MarlinDecoder(nn.Module):
 
     def __init__(self, img_size=[80, 80, 64], patch_size=16, embed_dim=384, depth=8,
         num_heads=6, mlp_hidden_dim=1024, qkv_bias=False, qk_scale=None, drop_rate=0., attn_drop_rate=0.,
-        norm_layer="LayerNorm", init_values=1., n_channels = 1, expand_channel_dim = True
+        norm_layer="LayerNorm", init_values=1., n_channels = 1, expand_channel_dim = False, patch_strides = 8
     ):
         super().__init__()
         self.n_channels = n_channels
         output_dim = self.n_channels * patch_size * patch_size * patch_size
         self.patch_size = patch_size
         self.patch_size = patch_size
-        self.n_patch_t = img_size[0] // patch_size
-        self.n_patch_h = img_size[1] // patch_size
-        self.n_patch_w = img_size[2] // patch_size
+        self.n_patch_t = (img_size[0] - patch_size) // patch_strides + 1
+        self.n_patch_h = (img_size[1] - patch_size) // patch_strides + 1
+        self.n_patch_w = (img_size[2] - patch_size) // patch_strides + 1
         self.embed_dim = embed_dim
         self.expand_channel_dim = expand_channel_dim
         if norm_layer == "LayerNorm":

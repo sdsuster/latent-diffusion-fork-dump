@@ -53,9 +53,9 @@ class Vit_VQ_Trainer(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         x = self.get_input(batch, self.image_key)
         opt1, opt2 = self.optimizers()
-        xrec, qloss, ind = self(x, return_pred_indices=True)
+        xrec= self(x, return_pred_indices=True) #, qloss, ind 
 
-        aeloss, log_dict_ae = self.loss(qloss, x, xrec, 0, self.global_step,
+        aeloss, log_dict_ae = self.loss(0, x, xrec, 0, self.global_step,
                                         last_layer=self.model.get_last_layer(), split="train",
                                         predicted_indices=None
                                         )
@@ -68,7 +68,7 @@ class Vit_VQ_Trainer(pl.LightningModule):
 
         # if optimizer_idx == 1:
         # discriminator
-        discloss, log_dict_disc = self.loss(qloss, x, xrec, 1, self.global_step,
+        discloss, log_dict_disc = self.loss(0, x, xrec, 1, self.global_step,
                                         last_layer=self.model.get_last_layer(), split="train")
         self.log_dict(log_dict_disc, prog_bar=False, logger=True, on_step=True, on_epoch=True)
         opt2.zero_grad()
@@ -96,15 +96,11 @@ class Vit_VQ_Trainer(pl.LightningModule):
         if only_inputs:
             log["inputs"] = x[:, :, :, :, 30]
             return log
-        xrec, _ = self(x)
+        xrec= self(x) #, _ 
         
         log["inputs"] = x[:, :, :, :, 30]
         log["reconstructions"] = xrec[:, :, :, :, 30]
-        if plot_ema:
-            with self.ema_scope():
-                xrec_ema, _ = self(x)
-                if x.shape[1] > 3: xrec_ema = self.to_rgb(xrec_ema)
-                log["reconstructions_ema"] = xrec_ema
+
         return log
 
     def validation_step(self, batch, batch_idx):
@@ -113,17 +109,17 @@ class Vit_VQ_Trainer(pl.LightningModule):
 
     def _validation_step(self, batch, batch_idx, suffix=""):
         x = self.get_input(batch, self.image_key)
-        xrec, qloss, ind = self(x, return_pred_indices=True)
-        aeloss, log_dict_ae = self.loss(qloss, x, xrec, 0,
+        xrec = self(x, return_pred_indices=True) #, qloss, ind
+        aeloss, log_dict_ae = self.loss(0, x, xrec, 0,
                                         self.global_step,
-                                        last_layer=self.get_last_layer(),
+                                        last_layer=self.model.get_last_layer(),
                                         split="val"+suffix,
                                         predicted_indices=None
                                         )
 
-        discloss, log_dict_disc = self.loss(qloss, x, xrec, 1,
+        discloss, log_dict_disc = self.loss(0, x, xrec, 1,
                                             self.global_step,
-                                            last_layer=self.get_last_layer(),
+                                            last_layer=self.model.get_last_layer(),
                                             split="val"+suffix,
                                             predicted_indices=None
                                             )
@@ -149,7 +145,7 @@ class VQ_GanBase(ABC, torch.nn.Module):
                  sane_index_shape=False, ) -> None:
         super().__init__()
 
-        self.quantize = VectorQuantizer2(n_embed, embed_dim, beta=0.25, remap=remap, sane_index_shape=sane_index_shape)
+        self.quantize = VectorQuantizer2(n_embed, embed_dim, beta=0.25, )
         self.quant_conv = torch.nn.Conv2d(z_channels, embed_dim, 1)
         self.post_quant_conv = torch.nn.Conv2d(
             embed_dim, z_channels, 1)
@@ -190,11 +186,11 @@ class VQ_GanBase(ABC, torch.nn.Module):
         return dec
 
     def forward(self, input, return_pred_indices=False):
-        quant, diff, (_,_,ind) = self.encode(input)
+        quant = self.encoder()(input) #, diff, (_,_,ind)
         dec = self.decode(quant)
         if return_pred_indices:
-            return dec, diff, ind
-        return dec, diff
+            return dec #, diff, ind
+        return dec #, diff
     # def forward(self, x: Tensor, return_pred_indices = False) -> Tensor:
     #     if self.as_feature_extractor:
     #         raise RuntimeError(
@@ -229,6 +225,7 @@ class ViT_VQ_Model(VQ_GanBase):
                  attn_drop_rate: float,
                  norm_layer: str,
                  init_values: float,
+                 patch_strides: int,
                  as_feature_extractor: bool = True,
                  ):
         super().__init__(n_embed, embed_dim, 1)
@@ -245,6 +242,7 @@ class ViT_VQ_Model(VQ_GanBase):
             attn_drop_rate=attn_drop_rate,
             norm_layer=norm_layer,
             init_values=init_values,
+            patch_strides=patch_strides
         )
         self.as_feature_extractor = as_feature_extractor
         if as_feature_extractor:
@@ -264,13 +262,14 @@ class ViT_VQ_Model(VQ_GanBase):
                 attn_drop_rate=attn_drop_rate,
                 norm_layer=norm_layer,
                 init_values=init_values,
+                patch_strides=patch_strides
             )
     
     def get_last_layer(self):
         return self.decoder().head.weight
     
     def decode(self, quant):
-        quant = self.post_quant_conv(quant)
+        # quant = self.post_quant_conv(quant)
         dec = self.decoder()(quant)
         dec = self.decoder().unpatch_to_img(dec)
         return dec

@@ -19,7 +19,7 @@ def get_brats_dataset(data_path, pad_size = [160, 160, 126], crop_size = [160, 1
             
             transforms.Identityd(keys=["image"]) if resize is None else
                 transforms.Resized( keys=["image"],
-                    spatial_size=(80, 80, 60),
+                    spatial_size=resize,
                     anti_aliasing=True, 
                 ),
             transforms.Identityd(keys=["image"]) if crop_size is None else
