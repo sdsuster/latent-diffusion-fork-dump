@@ -1,19 +1,10 @@
-import os.path
-import shutil
-import random
-from collections import deque
-from pathlib import Path
-from typing import Generator, Optional
-from urllib.request import urlretrieve
+from typing import Optional
 
 import pytorch_lightning as pl
-import cv2
 from abc import ABC, abstractmethod
 import numpy as np
 import torch
-from einops import rearrange
 from torch import Tensor
-from torch.nn import Linear, Module
 from ldm.util import instantiate_from_config
 from taming.modules.vqvae.quantize import VectorQuantizer2
 from packaging import version
