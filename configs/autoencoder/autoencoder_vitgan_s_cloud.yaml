@@ -1,0 +1,88 @@
+model:
+  base_learning_rate: 4.5e-6
+  target: ldm.modules.vitvq3d.models.vitae.Vit_VQ_Trainer
+  params:
+    # modalities: ['t1', 't1ce', 't2', 'flair']
+    # ckpt_path: ./weights/last.ckpt # to be filled
+    monitor: val/rec_loss
+    modelconfig:
+      target: ldm.modules.vitvq3d.models.vitae.ViT_AE_Model
+      params: 
+        img_size: 
+          - 80
+          - 80
+          - 64
+        patch_size: 8
+        patch_strides: 8
+        enc_dec_embed_dim: 3072
+        encoder_depth: 8
+        encoder_num_heads: 8
+        decoder_depth: 8
+        as_feature_extractor: false
+        decoder_num_heads: 6
+        
+        mlp_hidden_dim: 768
+        qkv_bias: true
+        qk_scale: null
+        drop_rate: 0.0
+        attn_drop_rate: 0.0
+        norm_layer: LayerNorm
+        init_values: 0.0
+    lossconfig:
+      target: ldm.modules.losses.vqperceptual.VQLPIPS3DWithDiscriminator
+      params:
+        disc_conditional: False
+        disc_in_channels: 1
+        disc_num_layers: 3
+        disc_start: 0
+        disc_factor: 0.2
+        g_weight: 0.2
+        codebook_weight: 1.0
+        perceptual_loss: Null
+data:
+  target: main.DataModuleFromConfig
+  params:
+    batch_size: 2
+    num_workers: 8
+    wrap: false
+    train:
+      target: ldm.data.brats.BratsDataset
+      params:
+        data_path:  /home/hdd2/jo/ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData/ # to be filled
+        resize: #h,w,d
+          - 80
+          - 80
+          - 64
+        crop_size: Null
+    validation:
+      target: ldm.data.brats.BratsValDataset
+      params:
+        data_path: /home/hdd2/jo/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData/ # to be filled
+        resize: #h,w,d
+          - 80
+          - 80
+          - 64
+        crop_size: Null
+    test:
+      target: ldm.data.brats.BratsValDataset
+      params:
+        data_path: /home/hdd2/jo/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData/ # to be filled
+        resize: #h,w,d
+          - 80
+          - 80
+          - 64
+        crop_size: Null
+
+lightning:
+  callbacks:
+    image_logger:
+      target: main.ImageLogger
+      params:
+        batch_frequency: 400
+        max_images: 8
+        increase_log_steps: False
+        rescale: False
+  trainer:
+    benchmark: True
+    # precision: 16-true
+    max_epochs: 300

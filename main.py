@@ -24,6 +24,24 @@ from ldm.util import instantiate_from_config
 import os
 from dotenv import load_dotenv
 
+# from ldm.models.swinunet.swinunet import SwinUnet
+# from ldm.models.swinunet.swin_transformer_v2 import SwinTransformerV2
+
+# from monai.utils import ensure_tuple_rep, look_up_option, optional_import
+# import torchsummary
+# model = SwinUnet(
+#             in_chans=4,
+#             embed_dim=128,
+#             window_size=ensure_tuple_rep(7, 3),
+#             patch_size=ensure_tuple_rep(2, 3),
+#             depths=(2, 2, 2),
+#             num_heads=(4, 8, 16, 32),
+#             mlp_ratio=4.0,
+#         )
+# model.to('cuda')
+# torchsummary.summary(model, (4, 80,80,64), 2)
+# # model(torch.zeros((2, 4, 80,80,64), device='cuda'))
+# exit()
 
 def get_parser(**parser_kwargs):
     def str2bool(v):
@@ -63,6 +81,13 @@ def get_parser(**parser_kwargs):
         help="paths to base configs. Loaded from left-to-right. "
              "Parameters can be overwritten or added with command-line options of the form `--key value`.",
         default=list(),
+    )
+    parser.add_argument(
+        "-e",
+        "--eval",
+        type=str,
+        default=None,
+        help="Evaluate Model"
     )
     parser.add_argument(
         "-t",
@@ -116,6 +141,12 @@ def get_parser(**parser_kwargs):
         default="logs",
         help="directory for logging dat shit",
     )
+    parser.add_argument(
+        "-nl",
+        "--nologger",
+        type=str2bool,
+        default=False,
+        help="No Logger")
     parser.add_argument(
         "--scale_lr",
         type=str2bool,
@@ -543,7 +574,11 @@ if __name__ == "__main__":
             del trainer_config["accelerator"]
             cpu = True
         else:
+            gpus = [eval(i) for i in lightning_config.trainer.gpus.strip(",").split(',')]
             gpuinfo = trainer_config["gpus"]
+            del trainer_config["gpus"]
+
+            lightning_config.trainer.devices = gpus
             print(f"Running on GPUs {gpuinfo}")
             cpu = False
         trainer_opt = argparse.Namespace(**trainer_config)
@@ -593,7 +628,7 @@ if __name__ == "__main__":
         else:
             logger_cfg = OmegaConf.create()
         logger_cfg = OmegaConf.merge(default_logger_cfg, logger_cfg)
-        trainer_kwargs["logger"] = instantiate_from_config(logger_cfg)
+        trainer_kwargs["logger"] = instantiate_from_config(logger_cfg) if not opt.nologger else None
 
         # modelcheckpoint - use TrainResult/EvalResult(checkpoint_on=metric) to
         # specify which metric is used to determine best models
@@ -705,7 +740,7 @@ if __name__ == "__main__":
         # configure learning rate
         bs, base_lr = config.data.params.batch_size, config.model.base_learning_rate
         if not cpu:
-            ngpu = len(lightning_config.trainer.gpus.strip(",").split(','))
+            ngpu = len(lightning_config.trainer.devices.strip(",").split(','))
         else:
             tpu_count = 0
             ngpu = 0
@@ -760,6 +795,12 @@ if __name__ == "__main__":
             except Exception:
                 # melk()
                 raise
+        if opt.eval is not None:
+            # from torchsummary import summary
+            # summary(model, input_size=(4, 80, 80, 64), batch_size=2, device="cpu")
+            # exit()
+            trainer.validate(model, ckpt_path=opt.eval, dataloaders=data)
+
         if not opt.no_test and not trainer.interrupted:
             trainer.test(model, data)
     except Exception:

@@ -5,6 +5,7 @@ from einops import repeat
 
 from ldm.modules.discriminator.model import NLayer3DDiscriminator, weights_init as n_layer_3d_discriminator
 from taming.modules.discriminator.model import NLayerDiscriminator, weights_init
+from monai.losses import DiceLoss
 from taming.modules.losses.lpips import LPIPS
 from taming.modules.losses.vqperceptual import hinge_d_loss, vanilla_d_loss
 
@@ -179,7 +180,7 @@ class VQLPIPS3DWithDiscriminator(nn.Module):
         super().__init__()
         assert disc_loss in ["hinge", "vanilla"]
         assert perceptual_loss in ["lpips", "clips", "dists", None]
-        assert pixel_loss in ["l1", "l2"]
+        assert pixel_loss in ["l1", "l2", "dice"]
         self.codebook_weight = codebook_weight
         self.pixel_weight = pixelloss_weight
         self.disc_each_step = disc_each_step
@@ -195,8 +196,10 @@ class VQLPIPS3DWithDiscriminator(nn.Module):
 
         if pixel_loss == "l1":
             self.pixel_loss = l1
-        else:
+        elif pixel_loss == "l2":
             self.pixel_loss = l2
+        else:
+            self.pixel_loss = DiceLoss(to_onehot_y=False, sigmoid=True)
         self.discriminator = NLayer3DDiscriminator(input_nc=disc_in_channels,
                                                  n_layers=disc_num_layers,
                                                  use_actnorm=use_actnorm,

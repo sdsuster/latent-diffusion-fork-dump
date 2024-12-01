@@ -8,7 +8,7 @@ from .modules import Block, no_grad_trunc_normal_
 from .embedding import SinCosPositionalEmbedding
 
 
-class MarlinDecoder(nn.Module):
+class ViTDecoder(nn.Module):
 
     def __init__(self, img_size=[80, 80, 64], patch_size=16, embed_dim=384, depth=8,
         num_heads=6, mlp_hidden_dim=1024, qkv_bias=False, qk_scale=None, drop_rate=0., attn_drop_rate=0.,
@@ -90,5 +90,3 @@ class MarlinDecoder(nn.Module):
         # mask_num = pos_emb_mask.shape[1]
         x = self.forward_features(x, return_token_num=0)
         return x
-    
-    

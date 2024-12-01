@@ -1,0 +1,69 @@
+model:
+  base_learning_rate: 4.5e-6
+  target: ldm.modules.vitvq3d.models.vitae.Vit_Seg_Trainer
+  params:
+    # modalities: ['t1', 't1ce', 't2', 'flair']
+    # ckpt_path: ./weights/last.ckpt # to be filled
+    monitor: val/dice_loss
+    modelconfig:
+      target: ldm.models.swinunet.swinunet.SwinUnet
+      params: 
+        in_chans: 4
+        embed_dim: 128
+        window_size: [7, 7, 7]
+        patch_size: [2, 2, 2]
+        depths: [2, 2, 2]
+        num_heads: [ 4, 8, 16, 32 ] 
+        drop_path_rate: 0.5
+        spatial_dims: 3
+    lossconfig:
+      target: monai.losses.DiceLoss
+      params:
+        to_onehot_y: False 
+        sigmoid: True
+    metricconfig:
+      target: monai.metrics.DiceMetric
+      params:
+        include_background: True
+        get_not_nans: True
+        reduction: mean_batch
+    # first_stage_weights: ./logs/2024-09-09T21-24-50_autoencoder_vitgan_xs_cloud/checkpoints/epoch=000075.ckpt
+data:
+  target: main.DataModuleFromConfig
+  params:
+    batch_size: 1
+    num_workers: 16
+    wrap: false
+    train:
+      target: ldm.data.brats.BratsSegFoldDataset
+      params:
+        data_path: ./brats_folds.json # to be filled
+        resize: #h,w,d
+          - 80
+          - 80
+          - 64
+        crop_size: Null
+    validation:
+      target: ldm.data.brats.BratsSegValFoldDataset
+      params:
+        data_path: ./brats_folds.json # to be filled
+        resize: #h,w,d
+          - 80
+          - 80
+          - 64
+        crop_size: Null
+
+lightning:
+  callbacks:
+    image_logger:
+      target: main.ImageLogger
+      params:
+        batch_frequency: 200
+        max_images: 8
+        increase_log_steps: False
+        rescale: False
+  trainer:
+    benchmark: True
+    # precision: 16-true
+    max_epochs: 300
+    devices: 0,

@@ -5,7 +5,7 @@ import torch
 from .embedding import PatchEmbedding3d, SinCosPositionalEmbedding
 from .modules import Block
 
-class MarlinEncoder(nn.Module):
+class VitEncoder(nn.Module):
 
     def __init__(self, img_size=[80, 80, 64], patch_size=16, embed_dim=768, depth=12,
         num_heads=12, mlp_hidden_dim=1024., qkv_bias=False, qk_scale=None, drop_rate=0., attn_drop_rate=0.,

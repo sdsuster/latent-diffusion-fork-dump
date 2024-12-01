@@ -32,9 +32,9 @@ model:
           - 64
         patch_size: 16
         enc_dec_embed_dim: 768
-        encoder_depth: 6
+        encoder_depth: 12
         encoder_num_heads: 8
-        decoder_depth: 4
+        decoder_depth: 8
         as_feature_extractor: false
         decoder_num_heads: 6
         
@@ -57,7 +57,7 @@ model:
 data:
   target: main.DataModuleFromConfig
   params:
-    batch_size: 1
+    batch_size: 8
     num_workers: 8
     wrap: false
     train:
@@ -82,7 +82,7 @@ lightning:
     image_logger:
       target: main.ImageLogger
       params:
-        batch_frequency: 1000
+        batch_frequency: 300
         max_images: 8
         increase_log_steps: False
         rescale: False
@@ -90,4 +90,4 @@ lightning:
   trainer:
     benchmark: True
     # precision: 16-mixed
-    max_epochs: 300
+    max_epochs: 600
