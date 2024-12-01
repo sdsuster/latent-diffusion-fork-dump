@@ -4,3 +4,4 @@ logs
 taming/modules/
 checkpoints/
 .env
+download.py
