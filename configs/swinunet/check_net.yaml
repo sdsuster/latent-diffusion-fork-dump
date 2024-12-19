@@ -66,4 +66,4 @@ lightning:
     benchmark: True
     # precision: 16-true
     max_epochs: 300
-    devices: 0,
+    devices: 1,
