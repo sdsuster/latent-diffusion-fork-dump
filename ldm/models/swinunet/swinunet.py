@@ -222,6 +222,7 @@ class SwinTransformerBlock(nn.Module):
         self.attn = WindowAttention(
             dim,
             window_size=self.window_size,
+            k=200,
             num_heads=num_heads,
             qkv_bias=qkv_bias,
             attn_drop=attn_drop,

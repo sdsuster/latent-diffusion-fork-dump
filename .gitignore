@@ -5,3 +5,4 @@ taming/modules/
 checkpoints/
 .env
 download.py
+lightning_logs
