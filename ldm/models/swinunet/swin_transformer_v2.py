@@ -195,8 +195,7 @@ class WindowAttention(nn.Module):
         self.num_heads = num_heads
         head_dim = dim // num_heads
         self.scale = head_dim**-0.5
-        mesh_args = torch.meshgrid.__kwdefaults__
-
+        # mesh_args = torch.meshgrid.__kwdefaults__
         if len(self.window_size) == 3:
             # self.relative_position_bias_table = nn.Parameter(
             #     torch.zeros(
@@ -220,6 +219,12 @@ class WindowAttention(nn.Module):
             # relative_coords[:, :, 0] *= (2 * self.window_size[1] - 1) * (2 * self.window_size[2] - 1)
             # relative_coords[:, :, 1] *= 2 * self.window_size[2] - 1
             self.seq_len = window_size[0] * window_size[1] * window_size[2]
+            self.biases = nn.Parameter(
+                torch.zeros(
+                    self.seq_len*k,
+                    num_heads,
+                )
+            )
         elif len(self.window_size) == 2:
             # self.relative_position_bias_table = nn.Parameter(
             #     torch.zeros((2 * window_size[0] - 1) * (2 * window_size[1] - 1), num_heads)
@@ -237,6 +242,9 @@ class WindowAttention(nn.Module):
             # relative_coords[:, :, 1] += self.window_size[1] - 1
             # relative_coords[:, :, 0] *= 2 * self.window_size[1] - 1
             self.seq_len = window_size[0] * window_size[1]
+            self.biases = nn.Parameter(
+                torch.zeros(self.seq_len*k, num_heads)
+            )
 
         # relative_position_index = relative_coords.sum(-1)
         # self.register_buffer("relative_position_index", relative_position_index)
@@ -244,12 +252,13 @@ class WindowAttention(nn.Module):
         self.attn_drop = nn.Dropout(attn_drop)
         self.proj_k = nn.Parameter(init_(torch.zeros(self.seq_len, k)))
 
+        self.proj_k_len = k
         self.share_kv = share_kv
         if not share_kv:
             self.proj_v = nn.Parameter(init_(torch.zeros(self.seq_len, k)))
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
-        # trunc_normal_(self.relative_position_bias_table, std=0.02)
+        trunc_normal_(self.biases, std=0.02)
         self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, x, mask):
@@ -273,12 +282,15 @@ class WindowAttention(nn.Module):
         #     q = q.view(-1, self.num_heads, n, n)
 
         attn = torch.einsum('bhnd,bhkd->bhnk', q, k)
-
         # relative_position_bias = self.relative_position_bias_table[
         #     self.relative_position_index.clone()[:n, :n].reshape(-1)
         # ].reshape(n, n, -1)
         # relative_position_bias = relative_position_bias.permute(2, 0, 1).contiguous()
+        # print(self.relative_position_bias_table.shape)
+        # print(n, attn.shape, relative_position_bias, self.relative_position_index.clone().shape)
+
         # attn = attn + relative_position_bias.unsqueeze(0)
+        attn = attn + self.biases[:n*self.proj_k_len].reshape(-1, n, self.proj_k_len).unsqueeze(0)
         attn = self.softmax(attn)
         attn = self.attn_drop(attn).to(v.dtype)
         x = torch.einsum('bhnk,bhkd->bhnd', attn, v).transpose(1, 2).reshape(b, n, c)
