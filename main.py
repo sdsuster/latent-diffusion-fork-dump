@@ -109,6 +109,7 @@ def get_parser(**parser_kwargs):
     parser.add_argument(
         "-p",
         "--project",
+        default="LDM",
         help="name of new or path to existing project"
     )
     parser.add_argument(
@@ -216,6 +217,9 @@ class DataModuleFromConfig(pl.LightningDataModule):
             self.dataset_configs["predict"] = predict
             self.predict_dataloader = self._predict_dataloader
         self.wrap = wrap
+
+    def obtain_train_property(self, field_name):
+        return getattr(self.datasets['train'], field_name, None)
 
     def prepare_data(self):
         for data_cfg in self.dataset_configs.values():
@@ -614,7 +618,7 @@ if __name__ == "__main__":
                 "target": "pytorch_lightning.loggers.CometLogger",
                 "params": {
                     "api_key": os.getenv('COMET_API_KEY'),
-                    "project_name": "LDM"
+                    "project_name": opt.project
                 }
             }
         }
@@ -791,7 +795,7 @@ if __name__ == "__main__":
         # run
         if opt.train:
             try:
-                trainer.fit(model, data, ckpt_path=opt.resume_from_checkpoint if "resume_from_checkpoint" in opt else None)
+                trainer.fit(model, datamodule=data, ckpt_path=opt.resume_from_checkpoint if "resume_from_checkpoint" in opt else None)
             except Exception:
                 # melk()
                 raise

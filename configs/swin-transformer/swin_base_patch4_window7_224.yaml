@@ -1,0 +1,73 @@
+model:
+  base_learning_rate: 0.001
+  target: ldm.modules.swin_transformer_trainer.VisionTransformerTrainer
+  params:
+    # modalities: ['t1', 't1ce', 't2', 'flair']
+    # ckpt_path: ./weights/last.ckpt # to be filled
+    monitor: val/dice_loss
+    modelconfig:
+      target: ldm.models.swin_transformer.SwinTransformer
+      params: 
+        embed_dim: 128
+        window_size: 7
+        depths: [ 2, 2, 18, 2 ]
+        num_heads: [ 4, 8, 16, 32 ]
+        drop_path_rate: 0.5
+        img_size: 224
+        num_classes: 7
+    lossconfig:
+      target: torch.nn.CrossEntropyLoss
+    metricconfig:
+      target: torchmetrics.Accuracy
+      params:
+        task: multiclass
+        num_classes: 7
+data:
+  target: main.DataModuleFromConfig
+  params:
+    batch_size: 1
+    num_workers: 8
+    wrap: false
+    train:
+      target: ldm.data.pam10k.PAM10KDDataset
+      params:
+        is_train: True
+        json_path: 'jsons/pam10kfolds.json'
+        image_dir: '/home/jovianto/dataset/ham10000/train/'
+        fold: 1
+        resize: #h,w,d
+          - 224
+          - 224
+        #   - 64
+        crop_size: 
+          - 400
+          - 400
+    validation:
+      target: ldm.data.pam10k.PAM10KDDataset
+      params:
+        is_train: False
+        json_path: 'jsons/pam10kfolds.json'
+        image_dir: '/home/jovianto/dataset/ham10000/train/'
+        fold: 1
+        resize: #h,w,d
+          - 224
+          - 224
+        #   - 64
+        crop_size: 
+          - 400
+          - 400
+
+lightning:
+  # callbacks:
+  #   image_logger:
+  #     target: main.ImageLogger
+  #     params:
+  #       batch_frequency: 200
+  #       max_images: 8
+  #       increase_log_steps: False
+  #       rescale: False
+  trainer:
+    benchmark: True
+    # precision: 16-true
+    max_epochs: 300
+    devices: 0,
