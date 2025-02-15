@@ -4,7 +4,7 @@ model:
   params:
     # modalities: ['t1', 't1ce', 't2', 'flair']
     # ckpt_path: ./weights/last.ckpt # to be filled
-    monitor: val/dice_loss
+    monitor: val/loss
     modelconfig:
       target: ldm.models.swin_transformer.SwinTransformer
       params: 
