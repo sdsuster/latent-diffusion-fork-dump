@@ -141,11 +141,11 @@ class VisionTransformerTrainer(pl.LightningModule):
     
     def on_train_start(self):
         # print(self.trainer.train_dataloader.train_dataloader.obtain_train_property('weight'))
-        w = self.trainer.datamodule.obtain_train_property('weight')
-        if w is not None:
-            nw = torch.Tensor(np.array(w))
-            self.loss.weight = nw.to(self.device)
-            print("\nUpdating training weight loss: ", self.loss.weight)
+        # w = self.trainer.datamodule.obtain_train_property('weight')
+        # if w is not None:
+        #     nw = torch.Tensor(np.array(w))
+        #     self.loss.weight = nw.to(self.device)
+        #     print("\nUpdating training weight loss: ", self.loss.weight)
         return super().on_train_start()
 
     def training_step(self, batch, batch_idx):
@@ -248,7 +248,6 @@ class VisionTransformerTrainer(pl.LightningModule):
         
         x, target = self.get_input(batch, self.image_key)
         pred= self(x) #, qloss, ind 
-
         loss = self.loss(pred.contiguous(), target.contiguous())
         loss = torch.mean(loss)
         self.log(f"val/loss", loss,

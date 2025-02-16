@@ -742,6 +742,8 @@ if __name__ == "__main__":
         #     print(f"{k}, {data.datasets[k].__class__.__name__}, {len(data.datasets[k])}")
 
         # configure learning rate
+        import torchvision.models as models
+        models.resnet50()
         bs, base_lr = config.data.params.batch_size, config.model.base_learning_rate
         if not cpu:
             ngpu = len(lightning_config.trainer.devices.strip(",").split(','))

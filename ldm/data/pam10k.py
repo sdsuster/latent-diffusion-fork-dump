@@ -87,6 +87,8 @@ def get_transforms(is_train = True, crop_size = [400, 400], resize = None):
             random_center=True, 
             random_size=False,
         ),
+        transforms.RandRotated(keys=["image", "seg"], range_x=0.2, prob=0.5),  # Random rotation up to ~11.5 degrees
+        transforms.RandZoomd(keys=["image", "seg"], min_zoom=0.9, max_zoom=1.1, prob=0.5),  # Random zoom between 90% to 110%
         transforms.RandFlipd(keys=["image", "seg"], prob=0.35, spatial_axis=[0, 1]),
         transforms.Identityd(keys=["image", "seg"]) if resize is None else
             transforms.Resized( keys=["image", "seg"],
@@ -95,17 +97,23 @@ def get_transforms(is_train = True, crop_size = [400, 400], resize = None):
                 anti_aliasing=True, 
             ),
 
-        transforms.ScaleIntensityd(keys=['image']),
-        transforms.RandAdjustContrastd(keys=["image"], gamma=(0.7, 1.3), prob=0.35),  # Adjust contrast randomly
-        transforms.RandHistogramShiftd(keys=["image"], num_control_points=5, prob=0.35),  # Simulates brightness changes
-        transforms.RandShiftIntensityd(keys=["image"], offsets=0.1, prob=0.35),  # Simulate hue shift
-        transforms.ScaleIntensityd(keys=["seg"], minv=0, maxv=1),
+        # transforms.RandAdjustContrastd(keys=["image"], gamma=(0.7, 1.3), prob=0.35),  # Adjust contrast randomly
+        # transforms.RandHistogramShiftd(keys=["image"], num_control_points=5, prob=0.35),  # Simulates brightness changes
+        # transforms.RandShiftIntensityd(keys=["image"], offsets=0.1, prob=0.35),  # Simulate hue shift
+        transforms.ScaleIntensityRanged(keys=['image', "seg"], a_min = 0., a_max=255., b_min=0., b_max=1.),
         transforms.ToTensord(keys=['image', 'seg'])
     ])
     else:
         return transforms.Compose([
-        transforms.LoadImaged(keys=['image', 'seg'],image_only=True, allow_missing_keys=True),
+        transforms.LoadImaged(keys=['image', 'seg'], image_only=True, allow_missing_keys=True),
         transforms.EnsureChannelFirstd(keys=["image", "seg"], allow_missing_keys=True),
+        # transforms.SpatialCropd(keys=["image", "seg"],
+        #     roi_size=crop_size,
+        #     random_center=False, 
+        #     random_size=False,
+        #      mode="center"
+        # ),
+        transforms.CenterSpatialCropd(keys=['image', 'seg'], roi_size=crop_size),
         transforms.Identityd(keys=["image", "seg"], allow_missing_keys=True) if resize is None else
             transforms.Resized( keys=["image", "seg"],
                 mode=['nearest-exact', 'nearest-exact'],
@@ -114,8 +122,7 @@ def get_transforms(is_train = True, crop_size = [400, 400], resize = None):
                 allow_missing_keys=True
             ),
 
-        transforms.ScaleIntensityd(keys=['image'], allow_missing_keys=True),
-        transforms.ScaleIntensityd(keys=["seg"], minv=0, maxv=1, allow_missing_keys=True),
+        transforms.ScaleIntensityRanged(keys=['image', "seg"], a_min = 0., a_max=255., b_min=0., b_max=1.),
         transforms.ToTensord(keys=['image', 'seg'], allow_missing_keys=True)
     ])
 
