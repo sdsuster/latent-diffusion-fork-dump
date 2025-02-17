@@ -126,9 +126,54 @@ def get_transforms(is_train = True, crop_size = [400, 400], resize = None):
         transforms.ToTensord(keys=['image', 'seg'], allow_missing_keys=True)
     ])
 
-def create_monai_dataset(data, image_dir, crop_size = [400, 400], resize = None, is_train = True):
+
+def get_seg_transforms(is_train = True, crop_size = [400, 400], resize = None):
+    """Define MONAI transform pipeline."""
+    if is_train:
+        return  transforms.Compose([
+        transforms.LoadImaged(keys=['image', 'seg'],image_only=True),
+        transforms.EnsureChannelFirstd(keys=["image", "seg"]),
+        transforms.RandSpatialCropd(keys=["image", "seg"],
+            roi_size=crop_size,
+            random_center=True, 
+            random_size=False,
+        ),
+        transforms.RandRotated(keys=["image", "seg"], range_x=0.2, mode='nearest', prob=0.5),  # Random rotation up to ~11.5 degrees
+        transforms.RandFlipd(keys=["image", "seg"], prob=0.5, spatial_axis=[0, 1]),
+        transforms.Identityd(keys=["image", "seg"]) if resize is None else
+            transforms.Resized( keys=["image", "seg"],
+                mode=['nearest-exact', 'nearest-exact'],
+                spatial_size=resize,
+                anti_aliasing=True, 
+            ),
+
+        transforms.RandAdjustContrastd(keys=["image"], gamma=(0.7, 1.3), prob=0.35),  # Adjust contrast randomly
+        transforms.RandHistogramShiftd(keys=["image"], num_control_points=5, prob=0.35),  # Simulates brightness changes
+        # transforms.RandShiftIntensityd(keys=["image"], offsets=0.1, prob=0.35),  # Simulate hue shift
+        transforms.ScaleIntensityRanged(keys=['image', "seg"], a_min = 0., a_max=255., b_min=0., b_max=1.),
+        transforms.ToTensord(keys=['image', 'seg'])
+    ])
+    else:
+        return transforms.Compose([
+        transforms.LoadImaged(keys=['image', 'seg'], image_only=True, allow_missing_keys=True),
+        transforms.EnsureChannelFirstd(keys=["image", "seg"], allow_missing_keys=True),
+        transforms.Identityd(keys=["image", "seg"], allow_missing_keys=True) if resize is None else
+            transforms.Resized( keys=["image", "seg"],
+                mode=['nearest-exact', 'nearest-exact'],
+                spatial_size=resize,
+                anti_aliasing=True, 
+                allow_missing_keys=True
+            ),
+
+        transforms.ScaleIntensityRanged(keys=['image', "seg"], a_min = 0., a_max=255., b_min=0., b_max=1.),
+        transforms.ToTensord(keys=['image', 'seg'], allow_missing_keys=True)
+    ])
+
+
+def create_monai_dataset(data, image_dir, crop_size = [400, 400], resize = None, is_train = True, is_seg = False):
     """Create a MONAI dataset from fold data."""
-    transforms = get_transforms(is_train=is_train, crop_size=crop_size, resize=resize)
+    transform_fn = get_seg_transforms  if is_seg else get_transforms
+    transforms =  transform_fn(is_train=is_train, crop_size=crop_size, resize=resize) 
     
     return Dataset(
         data=[{ "image": os.path.join(image_dir, 'images', item["image_id"]), "seg": os.path.join(image_dir, 'segmentations', item["segmentation_id"]), "label": item["dx"] } for item in data['train' if is_train else 'val']],
@@ -159,6 +204,19 @@ class PAM10KDDataset(torch.utils.data.Dataset):
     def __getitem__(self, i):
         return self.data[i]
 
+class PAM10KSegDataset(torch.utils.data.Dataset):
+    
+    def __init__(self, json_path, image_dir, is_train, crop_size=[400, 400], resize = None, fold = 1):
+        super().__init__()
+        data = load_fold(json_path, fold=fold)
+        self.weight = data['weights']
+        self.data = create_monai_dataset(data, image_dir = image_dir, is_train=is_train, crop_size=crop_size, resize=resize, is_seg=True)
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, i):
+        return self.data[i]
 
 if __name__ == "__main__":
     indexing('jsons/pam10kfolds.json', '/home/jovianto/dataset/ham10000/HAM10000_metadata.csv')
