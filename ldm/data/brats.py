@@ -4,9 +4,10 @@ from monai import transforms
 from monai.data import Dataset as MonaiDataset
 from torch.utils.data import Dataset
 import json
+import torch
 
 
-def get_brats_dataset(data_path, pad_size = [160, 160, 126], crop_size = [160, 160, 126], resize = None, is_val = False):
+def get_brats_dataset(data_path, pad_size = [160, 160, 126], crop_size = [80, 80, 64], resize = None, is_val = False):
         
     transform = transforms.Compose(
         [
@@ -15,7 +16,7 @@ def get_brats_dataset(data_path, pad_size = [160, 160, 126], crop_size = [160, 1
             transforms.EnsureTyped(keys=["image"]),
             # transforms.Orientationd(keys=["image"], axcodes="RAI", allow_missing_keys=True),
             transforms.CropForegroundd(keys=["image"], allow_smaller=True, source_key="image", allow_missing_keys=True),
-            transforms.SpatialPadd(keys=["image"], spatial_size=pad_size, allow_missing_keys=True),
+            # transforms.SpatialPadd(keys=["image"], spatial_size=pad_size, allow_missing_keys=True),
             
             transforms.Identityd(keys=["image"]) if resize is None else
                 transforms.Resized( keys=["image"],
@@ -157,28 +158,23 @@ def get_brats_seg_dataset(data_path, pad_size = [160, 160, 126], crop_size = [16
 
     return MonaiDataset(data=data, transform=val_transform if is_val else transform)
 
-def get_brats_seg_fold_dataset(json_path, pad_size = [160, 160, 126], crop_size = [160, 160, 126], resize = None, is_val = False):
+def get_brats_seg_fold_dataset(json_path, pad_size = [160, 160, 126], crop_size = [80, 80, 64], resize = None, is_val = False):
         
     transform = transforms.Compose(
         [
             transforms.LoadImaged(keys=["image", "label"], allow_missing_keys=True),
             transforms.ConvertToMultiChannelBasedOnBratsClassesd(keys="label"),
-            # transforms.EnsureChannelFirstd(keys=["image"], allow_missing_keys=True),
+            # transforms.EnsureChannelFirstd(keys=["label"], allow_missing_keys=True),
             transforms.EnsureTyped(keys=["image", "label"]),
             # transforms.Orientationd(keys=["image"], axcodes="RAI", allow_missing_keys=True),
             transforms.CropForegroundd( keys=["image", "label"], source_key="image", allow_smaller=True, allow_missing_keys=True),
             # transforms.SpatialPadd(keys=["image", "label"], spatial_size=pad_size, allow_missing_keys=True),
             
-            transforms.Identityd(keys=["image"]) if resize is None else
-                transforms.Resized( keys=["image"],
+            transforms.Identityd(keys=["image", "label"]) if resize is None else
+                transforms.Resized( keys=["image", "label"],
                     spatial_size=resize,
-                    anti_aliasing=True, 
-                ),
-            transforms.Identityd(keys=["label"]) if resize is None else
-                transforms.Resized( keys=["label"],
-                    mode='nearest-exact',
-                    spatial_size=resize,
-                    anti_aliasing=True, 
+                    mode=('area', 'nearest'),
+                    anti_aliasing=(True, False), 
                 ),
             transforms.Identityd(keys=["image", "label"]) if crop_size is None else
                 transforms.RandSpatialCropd(keys=["image", "label"],
@@ -189,10 +185,15 @@ def get_brats_seg_fold_dataset(json_path, pad_size = [160, 160, 126], crop_size 
             transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=0),
             transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=1),
             transforms.RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=2),
-            # transforms.NormalizeIntensityd(keys="image", nonzero=False, channel_wise=True),
+            transforms.RandZoomd(keys=["image", "label"], prob=0.8, mode=('area', 'nearest'), keep_size=True),
+            # transforms.Rand3DElasticd(keys=["image", "label"], sigma_range=(3, 6), magnitude_range=(1, 5), prob=0.75, mode=('bilinear', 'nearest')),
+            transforms.RandRotated(keys=["image", "label"],  range_x=15, range_y=15, range_z=15, 
+                                   prob=.8,padding_mode='zeros',
+                                   mode=('bilinear', 'nearest')),
+            transforms.NormalizeIntensityd(keys="image", nonzero=False, channel_wise=True),
             transforms.RandScaleIntensityd(keys="image", factors=0.1, prob=1.0),
             transforms.RandShiftIntensityd(keys="image", offsets=0.1, prob=1.0),
-            transforms.ScaleIntensityRangePercentilesd(keys=["image"], lower=0, upper=99.75, b_min=0, b_max=1),
+            # transforms.ScaleIntensityRangePercentilesd(keys=["image"], lower=0, upper=99.75, b_min=0, b_max=1),
             transforms.ToTensord(keys=["image", "label"]),
         ]
     )
@@ -201,22 +202,18 @@ def get_brats_seg_fold_dataset(json_path, pad_size = [160, 160, 126], crop_size 
         [
             transforms.LoadImaged(keys=["image", "label"], allow_missing_keys=True),
             transforms.ConvertToMultiChannelBasedOnBratsClassesd(keys="label"),
-            # transforms.EnsureChannelFirstd(keys=["image"], allow_missing_keys=True),
+            # transforms.AddChanneld(keys="label", ),
+            # transforms.EnsureChannelFirstd(keys=["label"], allow_missing_keys=True),
             transforms.EnsureTyped(keys=["image", "label"]),
             # transforms.Orientationd(keys=["image"], axcodes="RAI", allow_missing_keys=True),
             transforms.CropForegroundd( keys=["image", "label"], source_key="image", allow_smaller=True, allow_missing_keys=True),
-            # transforms.SpatialPadd(keys=["image", "label"], spatial_size=pad_size, allow_missing_keys=True),
+            transforms.SpatialPadd(keys=["image", "label"], spatial_size=pad_size, allow_missing_keys=True),
             
-            transforms.Identityd(keys=["image"]) if resize is None else
-                transforms.Resized( keys=["image"],
+            transforms.Identityd(keys=["image", "label"]) if resize is None else
+                transforms.Resized( keys=["image", "label"],
                     spatial_size=resize,
-                    anti_aliasing=True, 
-                ),
-            transforms.Identityd(keys=["label"]) if resize is None else
-                transforms.Resized( keys=["label"],
-                    mode='nearest-exact',
-                    spatial_size=resize,
-                    anti_aliasing=True, 
+                    mode=('area', 'nearest-exact'),
+                    anti_aliasing=(True, False), 
                 ),
             transforms.Identityd(keys=["image", "label"]) if crop_size is None else
                 transforms.RandSpatialCropd(keys=["image", "label"],
@@ -224,7 +221,8 @@ def get_brats_seg_fold_dataset(json_path, pad_size = [160, 160, 126], crop_size 
                     random_center=True, 
                     random_size=False,
                 ),
-            transforms.ScaleIntensityRangePercentilesd(keys=["image"], lower=0, upper=99.75, b_min=0, b_max=1),
+            transforms.NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
+            # transforms.ScaleIntensityRangePercentilesd(keys=["image"], lower=0, upper=99.75, b_min=0, b_max=1),
             transforms.ToTensord(keys=["image", "label"]),
         ]
     )
@@ -270,7 +268,7 @@ class BratsValDataset(BratsDataset):
         
 class BratsSegFoldDataset(Dataset):
     
-    def __init__(self,data_path, pad_size = [160, 160, 126], crop_size = [160, 160, 126], resize = None):
+    def __init__(self,data_path, pad_size = [160, 160, 126], crop_size = [80, 80, 64], resize = None):
         super().__init__()
         self.data = get_brats_seg_fold_dataset(data_path, pad_size, crop_size, resize)
 
@@ -282,7 +280,7 @@ class BratsSegFoldDataset(Dataset):
         
 class BratsSegValFoldDataset(Dataset):
     
-    def __init__(self,data_path, pad_size = [160, 160, 126], crop_size = [160, 160, 126], resize = None):
+    def __init__(self,data_path, pad_size = [160, 160, 126], crop_size = [80, 80, 64], resize = None):
         super().__init__()
         self.data = get_brats_seg_fold_dataset(data_path, pad_size, crop_size, resize, is_val=True)
 

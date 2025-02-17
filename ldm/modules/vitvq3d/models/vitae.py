@@ -11,6 +11,11 @@ from packaging import version
 # from ..config import resolve_config, Downloadable
 # from ..face_detector import FaceXZooFaceDetector
 
+from functools import partial
+from monai.inferers.utils import sliding_window_inference
+import time
+
+from ..optimizers.lr_scheduler import LinearWarmupCosineAnnealingLR
 from ..modules.decoder import ViTDecoder
 from ..modules.encoder import VitEncoder
 from monai.transforms import Activations, AsDiscrete, Compose
@@ -52,7 +57,7 @@ class Vit_VQ_Trainer(pl.LightningModule):
                                         last_layer=self.model.get_last_layer(), split="train",
                                         predicted_indices=None
                                         )
-
+        
         self.log_dict(log_dict_ae, prog_bar=False, logger=True, on_step=True, on_epoch=True)
         opt1.zero_grad()
         self.manual_backward(aeloss)
@@ -210,6 +215,14 @@ class Vit_Seg_Trainer(pl.LightningModule):
         self.image_key = image_key
         self.first_stage_weights = first_stage_weights
         
+        self.model_inferer = partial(
+        sliding_window_inference,
+        roi_size=modelconfig['params']['img_size'],
+        sw_batch_size=4,
+        predictor=self,
+        overlap=0.1,
+    )
+
         self.post_pred = AsDiscrete(argmax=False, logit_thresh=0.5)
         self.post_trans = Compose([Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
         if first_stage_weights is not None:
@@ -222,34 +235,51 @@ class Vit_Seg_Trainer(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         x, target = self.get_input(batch, self.image_key)
+        model_start_time = time.time()  # Start the timer
         pred= self(x) #, qloss, ind 
+        model_end_time = time.time()  # End the timer
+        model_time = model_end_time - model_start_time  # Calculate elapsed time
 
         loss = self.loss(pred.contiguous(), target.contiguous())
         loss = torch.mean(loss)
+        self.log(f"train/model_time", model_time,
+                   prog_bar=False, logger=True, on_step=True, on_epoch=True, sync_dist=True)
         self.log(f"train/dice_loss", loss,
                    prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=True)
         
-        with torch.no_grad():
-            pred_post = self.post_trans(pred)
+        # with torch.no_grad():
+        #     pred_post = self.post_trans(pred)
                 
-            self.dice_acc.reset()
-            self.dice_acc(y_pred=pred_post, y=target)
-            acc, not_nans = self.dice_acc.aggregate()
-            self.log(f"train/dice_acc0", acc[0],
-                    prog_bar=False, logger=True, on_step=True, on_epoch=True, sync_dist=True)
-            self.log(f"train/dice_acc1", acc[1],
-                    prog_bar=False, logger=True, on_step=True, on_epoch=True, sync_dist=True)
-            self.log(f"train/dice_acc2", acc[2],
-                    prog_bar=False, logger=True, on_step=True, on_epoch=True, sync_dist=True)
-
+        #     self.dice_acc.reset()
+        #     self.dice_acc(y_pred=pred_post, y=target)
+        #     acc, not_nans = self.dice_acc.aggregate()
+        #     self.log(f"train/dice_acc0", acc[0],
+        #             prog_bar=False, logger=True, on_step=True, on_epoch=True, sync_dist=True)
+        #     self.log(f"train/dice_acc1", acc[1],
+        #             prog_bar=False, logger=True, on_step=True, on_epoch=True, sync_dist=True)
+        #     self.log(f"train/dice_acc2", acc[2],
+        #             prog_bar=False, logger=True, on_step=True, on_epoch=True, sync_dist=True)
+        model_total_time = time.time()
+        self.log(f"train/model_total_time", model_total_time - model_start_time,
+                   prog_bar=False, logger=True, on_step=True, on_epoch=True, sync_dist=True)
         return loss
         
     
     def configure_optimizers(self):
         lr = self.learning_rate
         opt_ae = torch.optim.Adam(list(self.model.parameters()),
-                                  lr=lr, betas=(0.5, 0.9))
-        return opt_ae
+                                  lr=lr)
+        scheduler = LinearWarmupCosineAnnealingLR(
+            opt_ae, warmup_epochs=30, max_epochs=self.trainer.max_epochs
+        )
+        return {
+            "optimizer": opt_ae,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "epoch",  # Update every epoch
+                "frequency": 1,       # Step every epoch
+            },
+        }
 
     def get_input(self, batch, k):
         return batch[k], batch['label']
@@ -266,15 +296,20 @@ class Vit_Seg_Trainer(pl.LightningModule):
         self.load_state_dict(sd, strict=False)
         print(f"Restored from {path}")
     
-    def log_images(self, batch, only_inputs=False, plot_ema=False, **kwargs):
+    def log_images(self, batch, only_inputs=False, plot_ema=False, split='train', **kwargs):
         log = dict()
         x, y = self.get_input(batch, self.image_key)
+        y = y.to(torch.float)
 
         # x = x.to(self.device)
         if only_inputs:
             log["inputs"] = x[:, :, :, :, 30]
             return log
-        xrec= self(x) #, _ 
+        with torch.no_grad():
+            if split != 'train':
+                xrec= self.model_inferer(x)
+            else:
+                xrec= self(x) #, _ 
         class_labels = y[:, :, :, :, 30]
         # Step 1: Convert logits to class labels using argmax
         # prob = torch.sigmoid(class_labels)
@@ -315,7 +350,7 @@ class Vit_Seg_Trainer(pl.LightningModule):
     def _validation_step(self, batch, batch_idx, suffix=""):
         
         x, target = self.get_input(batch, self.image_key)
-        pred= self(x) #, qloss, ind 
+        pred= self.model_inferer(x) #, qloss, ind 
 
         loss = self.loss(pred.contiguous(), target.contiguous())
         loss = torch.mean(loss)

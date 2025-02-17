@@ -109,7 +109,7 @@ def get_parser(**parser_kwargs):
     parser.add_argument(
         "-p",
         "--project",
-        default="LDM",
+        default='swlin',
         help="name of new or path to existing project"
     )
     parser.add_argument(

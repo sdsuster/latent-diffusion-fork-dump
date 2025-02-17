@@ -4,12 +4,13 @@ from torch.nn import LayerNorm
 from collections.abc import Sequence
 
 from monai.networks.blocks import PatchEmbed, UnetOutBlock, UnetrBasicBlock, UnetrUpBlock 
-from monai.networks.nets.swin_unetr import MERGING_MODE, PatchMergingV2, get_window_size, compute_mask
-from ldm.models.swinunet.swin_transformer_v2 import WindowAttention, window_partition, window_reverse
+from monai.networks.nets.swin_unetr import MERGING_MODE, WindowAttention, PatchMergingV2, get_window_size, compute_mask
+from ldm.models.swinunet.swin_transformer_v2 import WLindowAttention, window_partition, window_reverse
 import torch.utils.checkpoint as checkpoint
 from monai.networks.blocks import MLPBlock as Mlp
 from monai.networks.layers import DropPath
 from ldm.util import instantiate_from_config
+from einops import rearrange
 from typing import Optional
 from monai.transforms import Activations, AsDiscrete, Compose
 from torch import Tensor
@@ -44,6 +45,7 @@ class BasicLayer(nn.Module):
         norm_layer: LayerNorm = nn.LayerNorm,
         downsample: nn.Module = None,
         use_checkpoint: bool = False,
+        use_wlin=True
     ) -> None:
         """
         Args:
@@ -81,6 +83,7 @@ class BasicLayer(nn.Module):
                     drop_path=drop_path[i] if isinstance(drop_path, list) else drop_path,
                     norm_layer=norm_layer,
                     use_checkpoint=use_checkpoint,
+                    use_wlin=use_wlin
                 )
                 for i in range(depth)
             ]
@@ -157,18 +160,27 @@ class PatchExpanding(nn.Module):
         x_shape = x.size()
         if len(x_shape) != 5:
             raise ValueError(f"expecting 5D x, got {x.shape}.")
-        b, d, h, w, c = x_shape
+        B, D, H, W, C = x_shape
+
+        pad_d = D % 2  # Pad only if D is odd
+        pad_h = H % 2  # Pad only if H is odd
+        pad_w = W % 2  # Pad only if W is odd
         x = self.norm(x)
-        x_ = self.expansion(x)
-        x = torch.zeros((b, 2*d, 2*h, 2*w, c//2), device=x.device)
-        x[:, 0::2, 0::2, 0::2, :] = x_[:, :, :, :, :self.dim]
-        x[:, 1::2, 0::2, 0::2, :] = x_[:, :, :, :, 1*self.dim:2*self.dim]
-        x[:, 0::2, 1::2, 0::2, :] = x_[:, :, :, :, 2*self.dim:3*self.dim]
-        x[:, 0::2, 0::2, 1::2, :] = x_[:, :, :, :, 3*self.dim:4*self.dim]
-        x[:, 1::2, 0::2, 1::2, :] = x_[:, :, :, :, 4*self.dim:5*self.dim]
-        x[:, 0::2, 1::2, 0::2, :] = x_[:, :, :, :, 5*self.dim:6*self.dim]
-        x[:, 0::2, 0::2, 1::2, :] = x_[:, :, :, :, 6*self.dim:7*self.dim]
-        x[:, 1::2, 1::2, 1::2, :] = x_[:, :, :, :, 7*self.dim:8*self.dim]
+        x_padded = F.pad(x, (0, 0, 0, pad_w, 0, pad_h, 0, pad_d))  # Padding format: (C, C, W, W, H, H, D, D)
+        x_ = self.expansion(x_padded)
+        # x = torch.zeros((b, 2*d, 2*h, 2*w, c//2), device=x.device)
+        x = rearrange(x_, 'b d h w (p1 p2 p3 c)-> b (d p1) (h p2) (w p3) c', p1=2, p2=2, p3=2)
+        x = x[:, :2 * D, :2 * H, :2 * W, :]  # Crop back to original scale
+
+# x_rearranged = rearrange(x, "b (c2 c1) h w d -> b (2 d) (2 h) (2 w) c1", c2=2)
+        # x[:, 0::2, 0::2, 0::2, :] = x_[:, :, :, :, :self.dim]
+        # x[:, 1::2, 0::2, 0::2, :] = x_[:, :, :, :, 1*self.dim:2*self.dim]
+        # x[:, 0::2, 1::2, 0::2, :] = x_[:, :, :, :, 2*self.dim:3*self.dim]
+        # x[:, 0::2, 0::2, 1::2, :] = x_[:, :, :, :, 3*self.dim:4*self.dim]
+        # x[:, 1::2, 0::2, 1::2, :] = x_[:, :, :, :, 4*self.dim:5*self.dim]
+        # x[:, 0::2, 1::2, 0::2, :] = x_[:, :, :, :, 5*self.dim:6*self.dim]
+        # x[:, 0::2, 0::2, 1::2, :] = x_[:, :, :, :, 6*self.dim:7*self.dim]
+        # x[:, 1::2, 1::2, 1::2, :] = x_[:, :, :, :, 7*self.dim:8*self.dim]
         return x
     
 
@@ -194,6 +206,7 @@ class SwinTransformerBlock(nn.Module):
         act_layer: str = "GELU",
         norm_layer: type = nn.LayerNorm,
         use_checkpoint: bool = False,
+        use_wlin: bool = True
     ) -> None:
         """
         Args:
@@ -219,10 +232,17 @@ class SwinTransformerBlock(nn.Module):
         self.mlp_ratio = mlp_ratio
         self.use_checkpoint = use_checkpoint
         self.norm1 = norm_layer(dim)
-        self.attn = WindowAttention(
+        self.attn =  WLindowAttention(
             dim,
             window_size=self.window_size,
-            k=200,
+            k=216,
+            num_heads=num_heads,
+            qkv_bias=qkv_bias,
+            attn_drop=attn_drop,
+            proj_drop=drop,
+        ) if use_wlin else WindowAttention(
+            dim,
+            window_size=self.window_size,
             num_heads=num_heads,
             qkv_bias=qkv_bias,
             attn_drop=attn_drop,
@@ -362,7 +382,8 @@ class BasicUpLayer(nn.Module):
         norm_layer: LayerNorm = nn.LayerNorm,
         upsample: nn.Module = None,
         use_checkpoint: bool = False,
-        use_skip_connection = False
+        use_skip_connection = False,
+        use_wlin = True
     ) -> None:
         """
         Args:
@@ -401,6 +422,7 @@ class BasicUpLayer(nn.Module):
                     drop_path=drop_path[i] if isinstance(drop_path, list) else drop_path,
                     norm_layer=norm_layer,
                     use_checkpoint=use_checkpoint,
+                    use_wlin=use_wlin
                 )
                 for i in range(depth)
             ]
@@ -422,7 +444,6 @@ class BasicUpLayer(nn.Module):
             b, d, h, w, c = x.size()
             if skip_connection is not None:
                 x = torch.cat([x, rearrange(skip_connection, "b c d h w -> b d h w c")], dim=-1)
-
             window_size, shift_size = get_window_size((d, h, w), self.window_size, self.shift_size)
             dp = int(np.ceil(d / window_size[0])) * window_size[0]
             hp = int(np.ceil(h / window_size[1])) * window_size[1]
@@ -484,6 +505,7 @@ class SwinUnet(nn.Module):
         use_checkpoint: bool = False,
         spatial_dims: int = 3,
         downsample="merging",
+        use_wlin=True
     ) -> None:
         """
         Args:
@@ -547,6 +569,7 @@ class SwinUnet(nn.Module):
                 norm_layer=norm_layer,
                 downsample=down_sample_mod,
                 use_checkpoint=use_checkpoint,
+                use_wlin=use_wlin
             )
             if i_layer == 0:
                 self.layers1.append(layer)
@@ -569,6 +592,7 @@ class SwinUnet(nn.Module):
             norm_layer=norm_layer,
             downsample=None,
             use_checkpoint=use_checkpoint,
+            use_wlin=use_wlin
         )
         self.layers4.append(layer)
 
@@ -586,7 +610,8 @@ class SwinUnet(nn.Module):
                 norm_layer=norm_layer,
                 upsample=PatchExpanding,
                 use_checkpoint=use_checkpoint,
-                use_skip_connection=True
+                use_skip_connection=True,
+                use_wlin=use_wlin
             )
             if i_layer == 0:
                 self.layers_up1.append(layer)
@@ -608,8 +633,9 @@ class SwinUnet(nn.Module):
             norm_layer=norm_layer,
             upsample=PatchExpanding,
             use_checkpoint=use_checkpoint,
+            use_wlin=use_wlin
         )
-        self.head = nn.Conv3d(in_channels=embed_dim//2,out_channels=3,kernel_size=1,bias=False)
+        self.head = nn.Conv3d(in_channels=embed_dim//2,out_channels=3,kernel_size=1,bias=True)
         # self.head = nn.Linear(embed_dim//2, 3)
         self.num_features = int(embed_dim * 2 ** (self.num_layers - 1))
         
@@ -737,7 +763,9 @@ class Vit_Seg_Trainer(pl.LightningModule):
     def configure_optimizers(self):
         lr = self.learning_rate
         opt_ae = torch.optim.Adam(list(self.model.parameters()),
-                                  lr=lr, betas=(0.5, 0.9))
+                                  lr=lr)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt_ae, T_max=150, eta_min=1e-6)
+
         return opt_ae
 
     def get_input(self, batch, k):

@@ -160,7 +160,7 @@ def window_reverse(windows, window_size, dims):
     return x
 
 
-class WindowAttention(nn.Module):
+class WLindowAttention(nn.Module):
     """
     Window based multi-head self attention module with relative position bias based on: "Liu et al.,
     Swin Transformer: Hierarchical Vision Transformer using Shifted Windows
