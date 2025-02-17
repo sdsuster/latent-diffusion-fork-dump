@@ -139,14 +139,14 @@ class VisionTransformerTrainer(pl.LightningModule):
     def forward(self, x: Tensor) -> Tensor:
         return self.model(x)
     
-    def on_train_start(self):
-        # print(self.trainer.train_dataloader.train_dataloader.obtain_train_property('weight'))
-        # w = self.trainer.datamodule.obtain_train_property('weight')
-        # if w is not None:
-        #     nw = torch.Tensor(np.array(w))
-        #     self.loss.weight = nw.to(self.device)
-        #     print("\nUpdating training weight loss: ", self.loss.weight)
-        return super().on_train_start()
+    # def on_train_start(self):
+    #     # print(self.trainer.train_dataloader.train_dataloader.obtain_train_property('weight'))
+    #     w = self.trainer.datamodule.obtain_train_property('weight')
+    #     if w is not None:
+    #         nw = torch.Tensor(np.array(w))
+    #         self.loss.weight = nw.to(self.device)
+    #         print("\nUpdating training weight loss: ", self.loss.weight)
+    #     return super().on_train_start()
 
     def training_step(self, batch, batch_idx):
         x, target = self.get_input(batch, self.image_key)
@@ -251,11 +251,11 @@ class VisionTransformerTrainer(pl.LightningModule):
         loss = self.loss(pred.contiguous(), target.contiguous())
         loss = torch.mean(loss)
         self.log(f"val/loss", loss,
-                   prog_bar=True, logger=True, on_step=False, on_epoch=True, sync_dist=True)
+                   prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=True)
             
         m = self.metric(pred, target)
         # print(target, pred_post, torch.mean(pred_post - target))
         self.log(f"val/metric", m,
-                prog_bar=True, logger=True, on_step=False, on_epoch=True, sync_dist=True)
+                prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=True)
         return loss
     

@@ -1,9 +1,9 @@
 model:
-  base_learning_rate: 0.00001
+  base_learning_rate: 0.000001
   target: ldm.modules.swin_transformer_trainer.VisionTransformerTrainer
   params:
     # modalities: ['t1', 't1ce', 't2', 'flair']
-    # ckpt_path: ./weights/last.ckpt # to be filled
+    # ckpt_path: ./logs/2025-02-16T19-09-30_swin_base_patch4_window7_224/checkpoints/last.ckpt # to be filled
     monitor: val/loss
     modelconfig:
       target: ldm.models.swin_transformer.SwinTransformer
