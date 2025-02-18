@@ -127,45 +127,55 @@ def get_transforms(is_train = True, crop_size = [400, 400], resize = None):
     ])
 
 
+def rgb_to_grayscale(img):
+    """Convert RGB (C,H,W) to grayscale (1,H,W)"""
+    if img.shape[0] == 3:  # Assuming input is (C,H,W) and C=3 for RGB
+        return torch.mean(img, dim=0, keepdim=True)  # Average across channels
+    return img  # If already grayscale, return as is
+
 def get_seg_transforms(is_train = True, crop_size = [400, 400], resize = None):
     """Define MONAI transform pipeline."""
     if is_train:
         return  transforms.Compose([
-        transforms.LoadImaged(keys=['image', 'seg'],image_only=True),
+        transforms.LoadImaged(keys=['image', 'seg'], image_only=True,),
         transforms.EnsureChannelFirstd(keys=["image", "seg"]),
+        # transforms.Lambdad(keys=["image"], func=rgb_to_grayscale),  # Convert to grayscale
         transforms.RandSpatialCropd(keys=["image", "seg"],
             roi_size=crop_size,
             random_center=True, 
             random_size=False,
         ),
-        transforms.RandRotated(keys=["image", "seg"], range_x=0.2, mode='nearest', prob=0.5),  # Random rotation up to ~11.5 degrees
-        transforms.RandFlipd(keys=["image", "seg"], prob=0.5, spatial_axis=[0, 1]),
+        transforms.RandRotated(keys=["image", "seg"], range_x=0.2, mode='nearest', prob=0.75),  # Random rotation up to ~11.5 degrees
+        transforms.RandFlipd(keys=["image", "seg"], prob=0.75, spatial_axis=[0, 1]),
         transforms.Identityd(keys=["image", "seg"]) if resize is None else
             transforms.Resized( keys=["image", "seg"],
-                mode=['nearest-exact', 'nearest-exact'],
+                mode=['area', 'nearest'],
                 spatial_size=resize,
                 anti_aliasing=True, 
             ),
-
-        transforms.RandAdjustContrastd(keys=["image"], gamma=(0.7, 1.3), prob=0.35),  # Adjust contrast randomly
-        transforms.RandHistogramShiftd(keys=["image"], num_control_points=5, prob=0.35),  # Simulates brightness changes
-        # transforms.RandShiftIntensityd(keys=["image"], offsets=0.1, prob=0.35),  # Simulate hue shift
-        transforms.ScaleIntensityRanged(keys=['image', "seg"], a_min = 0., a_max=255., b_min=0., b_max=1.),
+        transforms.NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
+        transforms.RandScaleIntensityd(keys="image", factors=0.1, prob=1.0),
+        transforms.RandShiftIntensityd(keys="image", offsets=0.1, prob=1.0),
+        transforms.ThresholdIntensityd(keys=["seg"], threshold=150, above=True, cval=1),  # Set values >150 to 1
+        transforms.ThresholdIntensityd(keys=["seg"], threshold=150, above=False, cval=0), # Set values <=150 to 0
         transforms.ToTensord(keys=['image', 'seg'])
     ])
     else:
         return transforms.Compose([
         transforms.LoadImaged(keys=['image', 'seg'], image_only=True, allow_missing_keys=True),
         transforms.EnsureChannelFirstd(keys=["image", "seg"], allow_missing_keys=True),
+        # transforms.Lambdad(keys=["image"], func=rgb_to_grayscale),  # Convert to grayscale
         transforms.Identityd(keys=["image", "seg"], allow_missing_keys=True) if resize is None else
             transforms.Resized( keys=["image", "seg"],
-                mode=['nearest-exact', 'nearest-exact'],
+                mode=['area', 'nearest'],
                 spatial_size=resize,
-                anti_aliasing=True, 
+                anti_aliasing=True,
                 allow_missing_keys=True
             ),
 
-        transforms.ScaleIntensityRanged(keys=['image', "seg"], a_min = 0., a_max=255., b_min=0., b_max=1.),
+        transforms.ThresholdIntensityd(keys=["seg"], threshold=150, above=True, cval=1),  # Set values >150 to 1
+        transforms.ThresholdIntensityd(keys=["seg"], threshold=150, above=False, cval=0), # Set values <=150 to 0
+        transforms.NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
         transforms.ToTensord(keys=['image', 'seg'], allow_missing_keys=True)
     ])
 
@@ -219,7 +229,7 @@ class PAM10KSegDataset(torch.utils.data.Dataset):
         return self.data[i]
 
 if __name__ == "__main__":
-    indexing('jsons/pam10kfolds.json', '/home/jovianto/dataset/ham10000/HAM10000_metadata.csv')
+    indexing('jsons/pam10kfolds.json', '/home/k8suser/jo/HAM/ham10000/HAM10000_metadata.csv')
 
     # ds = PAM10KDDataset(json_path='jsons/pam10kfolds.json', image_dir='/home/jovianto/dataset/ham10000/train/', is_train=True)
 

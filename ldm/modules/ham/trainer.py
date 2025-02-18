@@ -166,14 +166,14 @@ class HAM_Seg_Trainer(pl.LightningModule):
         self.log(f"train/dice_loss", loss,
                    prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=True)
         
-        # with torch.no_grad():
-        #     pred_post = self.post_trans(pred)
+        with torch.no_grad():
+            pred_post = self.post_trans(pred)
                 
-        #     self.dice_acc.reset()
-        #     self.dice_acc(y_pred=pred_post, y=target)
-        #     acc, not_nans = self.dice_acc.aggregate()
-        #     self.log(f"train/dice_acc0", acc[0],
-        #             prog_bar=False, logger=True, on_step=True, on_epoch=True, sync_dist=True)
+            self.dice_acc.reset()
+            self.dice_acc(y_pred=pred_post, y=target)
+            acc, not_nans = self.dice_acc.aggregate()
+            self.log(f"train/dice_acc", acc[0],
+                    prog_bar=False, logger=True, on_step=True, on_epoch=True, sync_dist=True)
         #     self.log(f"train/dice_acc1", acc[1],
         #             prog_bar=False, logger=True, on_step=True, on_epoch=True, sync_dist=True)
         #     self.log(f"train/dice_acc2", acc[2],
@@ -189,7 +189,7 @@ class HAM_Seg_Trainer(pl.LightningModule):
         opt_ae = torch.optim.Adam(list(self.model.parameters()),
                                   lr=lr)
         scheduler = LinearWarmupCosineAnnealingLR(
-            opt_ae, warmup_epochs=30, max_epochs=self.trainer.max_epochs
+            opt_ae, warmup_epochs=self.trainer.max_epochs//10, max_epochs=self.trainer.max_epochs
         )
         return {
             "optimizer": opt_ae,
