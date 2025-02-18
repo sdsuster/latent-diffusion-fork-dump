@@ -1,5 +1,5 @@
 model:
-  base_learning_rate: 1.5e-5
+  base_learning_rate: 5e-6
   target: ldm.modules.ham.HAM_Seg_Trainer
   params:
     # modalities: ['t1', 't1ce', 't2', 'flair']
@@ -18,7 +18,7 @@ model:
         # num_heads: [ 3, 6, 12, 24 ] 
         # drop_path_rate: 0.2
         use_checkpoint: False
-        use_wlin: 125
+        # use_wlin: 125
         spatial_dims: 2
     lossconfig:
       target: monai.losses.DiceLoss
@@ -43,9 +43,9 @@ data:
       params:
         is_train: True
         json_path: 'jsons/pam10kfolds.json'
-        image_dir: '/home/jovianto/dataset/ham10000/train/'
-        fold: 1
-        crop_size: #h,w,d
+        image_dir: '/home/k8suser/jo/HAM/ham10000/train/'
+        fold: 4
+        resize: #h,w,d
           - 224
           - 224
     validation:
@@ -53,9 +53,9 @@ data:
       params:
         is_train: False
         json_path: 'jsons/pam10kfolds.json'
-        image_dir: '/home/jovianto/dataset/ham10000/train/'
-        fold: 1
-        crop_size: #h,w,d
+        image_dir: '/home/k8suser/jo/HAM/ham10000/train/'
+        fold: 4
+        resize: #h,w,d
           - 224
           - 224
 
@@ -71,6 +71,6 @@ lightning:
   trainer:
     benchmark: True
     # precision: 16-true
-    max_epochs: 300
+    max_epochs: 150
     devices: 0,
-    check_val_every_n_epoch: 10
+    check_val_every_n_epoch: 1
