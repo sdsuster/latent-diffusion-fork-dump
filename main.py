@@ -20,7 +20,7 @@ from pytorch_lightning.utilities.rank_zero import rank_zero_only
 from pytorch_lightning.utilities import rank_zero_info
 
 from ldm.data.base import Txt2ImgIterableBaseDataset
-from ldm.util import instantiate_from_config
+from ldm.util import instantiate_from_config, get_class_from_string
 import os
 from dotenv import load_dotenv
 
@@ -198,12 +198,14 @@ def worker_init_fn(_):
 class DataModuleFromConfig(pl.LightningDataModule):
     def __init__(self, batch_size, train=None, validation=None, test=None, predict=None,
                  wrap=False, num_workers=None, shuffle_test_loader=False, use_worker_init_fn=False,
-                 shuffle_val_dataloader=False):
+                 shuffle_val_dataloader=False, sampler_cls = None, distributed = False):
         super().__init__()
         self.batch_size = batch_size
         self.dataset_configs = dict()
         self.num_workers = num_workers if num_workers is not None else batch_size * 2
         self.use_worker_init_fn = use_worker_init_fn
+        self.sampler_cls = sampler_cls if distributed else None
+        self.distributed = distributed
         if train is not None:
             self.dataset_configs["train"] = train
             self.train_dataloader = self._train_dataloader
@@ -232,26 +234,38 @@ class DataModuleFromConfig(pl.LightningDataModule):
         if self.wrap:
             for k in self.datasets:
                 self.datasets[k] = WrappedDataset(self.datasets[k])
+                
+    def construct_sampler_if_not_none(self, ds, shuffle):
+        if self.sampler_cls == None:
+            return None
+        samplerCls = get_class_from_string(self.sampler_cls)
+        return samplerCls(ds, shuffle=shuffle) 
 
     def _train_dataloader(self):
-        is_iterable_dataset = isinstance(self.datasets['train'], Txt2ImgIterableBaseDataset)
-        if is_iterable_dataset or self.use_worker_init_fn:
+        if self.use_worker_init_fn:
             init_fn = worker_init_fn
         else:
             init_fn = None
-        return DataLoader(self.datasets["train"], batch_size=self.batch_size,
-                          num_workers=self.num_workers, shuffle=False if is_iterable_dataset else True,
+        ds = self.datasets["train"]
+        sampler = self.construct_sampler_if_not_none(ds, True)
+        return DataLoader(ds, batch_size=self.batch_size,
+                          num_workers=self.num_workers, shuffle=False if self.sampler_cls is not None else True,
+                          sampler=sampler, persistent_workers=True,
+                          pin_memory=True,
                           worker_init_fn=init_fn)
 
     def _val_dataloader(self, shuffle=False):
-        if isinstance(self.datasets['validation'], Txt2ImgIterableBaseDataset) or self.use_worker_init_fn:
+        if self.use_worker_init_fn:
             init_fn = worker_init_fn
         else:
             init_fn = None
-        return DataLoader(self.datasets["validation"],
-                          batch_size=self.batch_size,
+        ds = self.datasets["validation"]
+        sampler = self.construct_sampler_if_not_none(ds, shuffle)
+        return DataLoader(ds,
+                        #   batch_size=self.batch_size,
                           num_workers=self.num_workers,
                           worker_init_fn=init_fn,
+                          sampler=sampler,
                           shuffle=shuffle)
 
     def _test_dataloader(self, shuffle=False):
@@ -264,7 +278,10 @@ class DataModuleFromConfig(pl.LightningDataModule):
         # do not shuffle dataloader for iterable dataset
         shuffle = shuffle and (not is_iterable_dataset)
 
-        return DataLoader(self.datasets["test"], batch_size=self.batch_size,
+        ds = self.datasets["test"]
+        sampler = self.construct_sampler_if_not_none(ds, shuffle)
+        return DataLoader(ds, sampler=sampler, 
+                        #   batch_size=self.batch_size,
                           num_workers=self.num_workers, worker_init_fn=init_fn, shuffle=shuffle)
 
     def _predict_dataloader(self, shuffle=False):
@@ -674,15 +691,15 @@ if __name__ == "__main__":
                     "lightning_config": lightning_config,
                 }
             },
-            "image_logger": {
-                "target": "main.ImageLogger",
-                "params": {
-                    "batch_frequency": 750,
-                    "max_images": 4,
-                    "clamp": True,
-                    "save_dir" : logdir
-                }
-            },
+            # "image_logger": {
+            #     "target": "main.ImageLogger",
+            #     "params": {
+            #         "batch_frequency": 750,
+            #         "max_images": 4,
+            #         "clamp": True,
+            #         "save_dir" : logdir
+            #     }
+            # },
             "learning_rate_logger": {
                 "target": "main.LearningRateMonitor",
                 "params": {
@@ -732,6 +749,7 @@ if __name__ == "__main__":
         trainer.logdir = logdir  ###
 
         # data
+        config.data['params']['distributed'] = len(lightning_config.trainer.devices.strip(",").split(',')) > 1
         data = instantiate_from_config(config.data)
         # NOTE according to https://pytorch-lightning.readthedocs.io/en/latest/datamodules.html
         # calling these ourselves should not be necessary but it is.

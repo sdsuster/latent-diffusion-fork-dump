@@ -200,6 +200,8 @@ class Vit_Seg_Trainer(pl.LightningModule):
                  monitor=None,
                  first_stage_weights: Optional[str] = None,
                  ckpt_path = None,
+                 activation_fn = 'sigmoid',
+                 to_one_hot = False,
                  ignore_keys=[],
                  ):
         super().__init__()
@@ -214,6 +216,8 @@ class Vit_Seg_Trainer(pl.LightningModule):
         self.lr_g_factor = lr_g_factor
         self.image_key = image_key
         self.first_stage_weights = first_stage_weights
+        self.activation_fn = activation_fn
+        self.to_one_hot = to_one_hot
         
         self.model_inferer = partial(
         sliding_window_inference,
@@ -222,9 +226,18 @@ class Vit_Seg_Trainer(pl.LightningModule):
         predictor=self,
         overlap=0.1,
     )
+        if to_one_hot:
+            self.post_label = AsDiscrete(to_onehot=modelconfig['params']['out_channels'])
+            self.post_trans = Compose([
+                                        Activations(sigmoid= self.activation_fn == 'sigmoid', softmax= self.activation_fn == 'softmax'),
+                                        AsDiscrete(threshold=0.5, to_onehot=modelconfig['params']['out_channels'])
+                                       ])
+        else:
+            self.post_label = None
+            self.post_trans = Compose([
+                                        Activations(sigmoid= self.activation_fn == 'sigmoid', softmax= self.activation_fn == 'softmax'),
+                                       AsDiscrete(threshold=0.5)])
 
-        self.post_pred = AsDiscrete(argmax=False, logit_thresh=0.5)
-        self.post_trans = Compose([Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
         if first_stage_weights is not None:
             self.load_encoder_weights_frozen()
         if ckpt_path is not None:
@@ -253,12 +266,9 @@ class Vit_Seg_Trainer(pl.LightningModule):
         #     self.dice_acc.reset()
         #     self.dice_acc(y_pred=pred_post, y=target)
         #     acc, not_nans = self.dice_acc.aggregate()
-        #     self.log(f"train/dice_acc0", acc[0],
-        #             prog_bar=False, logger=True, on_step=True, on_epoch=True, sync_dist=True)
-        #     self.log(f"train/dice_acc1", acc[1],
-        #             prog_bar=False, logger=True, on_step=True, on_epoch=True, sync_dist=True)
-        #     self.log(f"train/dice_acc2", acc[2],
-        #             prog_bar=False, logger=True, on_step=True, on_epoch=True, sync_dist=True)
+        #     for i, v in enumerate(acc):
+        #         self.log(f"train/dice_acc{i}", acc[0],
+        #                 prog_bar=False, logger=True, on_step=True, on_epoch=True, sync_dist=True)
         model_total_time = time.time()
         self.log(f"train/model_total_time", model_total_time - model_start_time,
                    prog_bar=False, logger=True, on_step=True, on_epoch=True, sync_dist=True)
@@ -282,6 +292,15 @@ class Vit_Seg_Trainer(pl.LightningModule):
         }
 
     def get_input(self, batch, k):
+        
+        if isinstance(batch, list):
+            imgs = []
+            labels = []
+            for i in range(len(batch)):
+                imgs.append(batch[i][k])
+                labels.append(batch[i]['label'])
+            return torch.concat(imgs), torch.concat(labels)
+        
         return batch[k], batch['label']
     
 
@@ -359,17 +378,19 @@ class Vit_Seg_Trainer(pl.LightningModule):
         self.log(f"val/dice_loss", loss,
                    prog_bar=True, logger=True, on_step=False, on_epoch=True, sync_dist=True)
         pred_post = self.post_trans(pred)
+
+        if self.post_label is not None:
+            label_post = self.post_label(target)  
+        else: 
+            label_post = target
             
         self.dice_acc.reset()
-        self.dice_acc(y_pred=pred_post, y=target)
+        self.dice_acc(y_pred=pred_post, y=label_post)
         acc, not_nans = self.dice_acc.aggregate()
         # print(target, pred_post, torch.mean(pred_post - target))
-        self.log(f"val/dice_acc0", acc[0],
-                prog_bar=True, logger=True, on_step=False, on_epoch=True, sync_dist=True)
-        self.log(f"val/dice_acc1", acc[1],
-                prog_bar=True, logger=True, on_step=False, on_epoch=True, sync_dist=True)
-        self.log(f"val/dice_acc2", acc[2],
-                prog_bar=True, logger=True, on_step=False, on_epoch=True, sync_dist=True)
+        for i, v in enumerate(acc):
+            self.log(f"train/dice_acc{i}", v,
+                    prog_bar=False, logger=True, on_step=False, on_epoch=True, sync_dist=True)
         self.log(f"val/dice_acc", torch.mean(acc),
                 prog_bar=True, logger=True, on_step=False, on_epoch=True, sync_dist=True)
         return loss
