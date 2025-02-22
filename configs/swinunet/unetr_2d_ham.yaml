@@ -6,19 +6,19 @@ model:
     # ckpt_path: ./weights/last.ckpt # to be filled
     monitor: val/dice_loss
     modelconfig:
-      target: ldm.models.swinunet.swlinunetr.SwinUNETR
+      target: monai.networks.nets.unetr.UNETR  
       params: 
         in_channels: 3
         out_channels: 1
-        feature_size: 48
+        feature_size: 64
         img_size: [224, 224]
         # window_size: [7, 7, 7]
         # patch_size: [2, 2, 2]
         # depths: [2, 2, 2]
         # num_heads: [ 3, 6, 12, 24 ] 
         # drop_path_rate: 0.2
-        use_checkpoint: False
-        use_wlin: 25
+        # use_checkpoint: False
+        # use_wlin: 25
         spatial_dims: 2
     lossconfig:
       target: monai.losses.DiceLoss
@@ -44,7 +44,7 @@ data:
         is_train: True
         json_path: 'jsons/pam10kfolds.json'
         image_dir: '/home/k8suser/jo/HAM/ham10000/train/'
-        fold: 4
+        fold: 2
         resize: #h,w,d
           - 224
           - 224
@@ -54,7 +54,7 @@ data:
         is_train: False
         json_path: 'jsons/pam10kfolds.json'
         image_dir: '/home/k8suser/jo/HAM/ham10000/train/'
-        fold: 4
+        fold: 2
         resize: #h,w,d
           - 224
           - 224
