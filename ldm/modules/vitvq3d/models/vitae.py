@@ -368,6 +368,8 @@ class Vit_Seg_Trainer(pl.LightningModule):
                 prog_bar=True, logger=True, on_step=False, on_epoch=True, sync_dist=True)
         self.log(f"val/dice_acc2", acc[2],
                 prog_bar=True, logger=True, on_step=False, on_epoch=True, sync_dist=True)
+        self.log(f"val/dice_acc", torch.mean(acc),
+                prog_bar=True, logger=True, on_step=False, on_epoch=True, sync_dist=True)
         return loss
     
     def load_encoder_weights_frozen(self):
