@@ -306,10 +306,11 @@ class Vit_Seg_Trainer(pl.LightningModule):
             log["inputs"] = x[:, :, :, :, 30]
             return log
         with torch.no_grad():
-            if split != 'train':
-                xrec= self.model_inferer(x)
-            else:
-                xrec= self(x) #, _ 
+            with torch.amp.autocast("cuda"):
+                if split != 'train':
+                    xrec= self.model_inferer(x)
+                else:
+                    xrec= self(x) #, _ 
         class_labels = y[:, :, :, :, 30]
         # Step 1: Convert logits to class labels using argmax
         # prob = torch.sigmoid(class_labels)
@@ -337,7 +338,8 @@ class Vit_Seg_Trainer(pl.LightningModule):
         color_images[:, 0][seg[:, 0] == 1] = 1.
         # color_images[:, 0][seg[:, 0] == 0] = 0.
         # color_images[:, 1][seg[:, 1] == 0] = 0.
-
+        if split != 'train':
+            log["original"] = batch['original_image'][:, 1, :, :, 30]
         log["inputs"] = x[:, :, :, :, 30]
         log["prediction"] = torch.tensor(color_images)
 

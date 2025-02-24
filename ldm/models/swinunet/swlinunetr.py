@@ -27,6 +27,7 @@ from monai.networks.blocks import PatchEmbed, UnetOutBlock, UnetrBasicBlock, Une
 from monai.networks.layers import DropPath, trunc_normal_
 from monai.utils import ensure_tuple_rep, look_up_option, optional_import
 from monai.utils.deprecate_utils import deprecated_arg
+from .attention.standard import WLindowAttention, WindowAttention
 import math
 rearrange, _ = optional_import("einops", name="rearrange")
 
@@ -80,6 +81,7 @@ class SwinUNETR(nn.Module):
         dropout_path_rate: float = 0.0,
         normalize: bool = True,
         use_checkpoint: bool = False,
+        window_size: Sequence[int] = (7, 7, 7),
         spatial_dims: int = 3,
         downsample="merging",
         use_v2=False,
@@ -125,7 +127,6 @@ class SwinUNETR(nn.Module):
 
         img_size = ensure_tuple_rep(img_size, spatial_dims)
         patch_sizes = ensure_tuple_rep(self.patch_size, spatial_dims)
-        window_size = ensure_tuple_rep(7, spatial_dims)
 
         if spatial_dims not in (2, 3):
             raise ValueError("spatial dimension should be 2 or 3.")
@@ -438,252 +439,143 @@ def get_window_size(x_size, window_size, shift_size=None):
         return tuple(use_window_size), tuple(use_shift_size)
 
 
-class WindowAttention(nn.Module):
-    """
-    Window based multi-head self attention module with relative position bias based on: "Liu et al.,
-    Swin Transformer: Hierarchical Vision Transformer using Shifted Windows
-    <https://arxiv.org/abs/2103.14030>"
-    https://github.com/microsoft/Swin-Transformer
-    """
+# class WLindowAttention(nn.Module):
+#     """
+#     Window based multi-head self attention module with relative position bias based on: "Liu et al.,
+#     Swin Transformer: Hierarchical Vision Transformer using Shifted Windows
+#     <https://arxiv.org/abs/2103.14030>"
+#     https://github.com/microsoft/Swin-Transformer
+#     """
 
-    def __init__(
-        self,
-        dim: int,
-        num_heads: int,
-        window_size: Sequence[int],
-        qkv_bias: bool = False,
-        attn_drop: float = 0.0,
-        proj_drop: float = 0.0,
-    ) -> None:
-        """
-        Args:
-            dim: number of feature channels.
-            num_heads: number of attention heads.
-            window_size: local window size.
-            qkv_bias: add a learnable bias to query, key, value.
-            attn_drop: attention dropout rate.
-            proj_drop: dropout rate of output.
-        """
+#     def __init__(
+#         self,
+#         dim: int,
+#         num_heads: int,
+#         k: int,
+#         window_size: Sequence[int],
+#         qkv_bias: bool = False,
+#         attn_drop: float = 0.0,
+#         proj_drop: float = 0.0,
+#         share_kv: bool = False
+#     ) -> None:
+#         """
+#         Args:
+#             dim: number of feature channels.
+#             num_heads: number of attention heads.
+#             window_size: local window size.
+#             qkv_bias: add a learnable bias to query, key, value.
+#             attn_drop: attention dropout rate.
+#             proj_drop: dropout rate of output.
+#         """
 
-        super().__init__()
-        self.dim = dim
-        self.window_size = window_size
-        self.num_heads = num_heads
-        head_dim = dim // num_heads
-        self.scale = head_dim**-0.5
-        mesh_args = torch.meshgrid.__kwdefaults__
+#         super().__init__()
+#         self.dim = dim
+#         self.window_size = window_size
+#         self.num_heads = num_heads
+#         head_dim = dim // num_heads
+#         self.scale = head_dim**-0.5
+#         # mesh_args = torch.meshgrid.__kwdefaults__
+#         if len(self.window_size) == 3:
+#             # self.relative_position_bias_table = nn.Parameter(
+#             #     torch.zeros(
+#             #         (2 * self.window_size[0] - 1) * (2 * self.window_size[1] - 1) * (2 * self.window_size[2] - 1),
+#             #         num_heads,
+#             #     )
+#             # )
+#             # coords_d = torch.arange(self.window_size[0])
+#             # coords_h = torch.arange(self.window_size[1])
+#             # coords_w = torch.arange(self.window_size[2])
+#             # if mesh_args is not None:
+#             #     coords = torch.stack(torch.meshgrid(coords_d, coords_h, coords_w, indexing="ij"))
+#             # else:
+#             #     coords = torch.stack(torch.meshgrid(coords_d, coords_h, coords_w))
+#             # coords_flatten = torch.flatten(coords, 1)
+#             # relative_coords = coords_flatten[:, :, None] - coords_flatten[:, None, :]
+#             # relative_coords = relative_coords.permute(1, 2, 0).contiguous()
+#             # relative_coords[:, :, 0] += self.window_size[0] - 1
+#             # relative_coords[:, :, 1] += self.window_size[1] - 1
+#             # relative_coords[:, :, 2] += self.window_size[2] - 1
+#             # relative_coords[:, :, 0] *= (2 * self.window_size[1] - 1) * (2 * self.window_size[2] - 1)
+#             # relative_coords[:, :, 1] *= 2 * self.window_size[2] - 1
+#             self.seq_len = window_size[0] * window_size[1] * window_size[2]
+#             self.biases = nn.Parameter(
+#                 torch.zeros(
+#                     self.seq_len*k,
+#                     num_heads,
+#                 )
+#             )
+#         elif len(self.window_size) == 2:
+#             # self.relative_position_bias_table = nn.Parameter(
+#             #     torch.zeros((2 * window_size[0] - 1) * (2 * window_size[1] - 1), num_heads)
+#             # )
+#             # coords_h = torch.arange(self.window_size[0])
+#             # coords_w = torch.arange(self.window_size[1])
+#             # if mesh_args is not None:
+#             #     coords = torch.stack(torch.meshgrid(coords_h, coords_w, indexing="ij"))
+#             # else:
+#             #     coords = torch.stack(torch.meshgrid(coords_h, coords_w))
+#             # coords_flatten = torch.flatten(coords, 1)
+#             # relative_coords = coords_flatten[:, :, None] - coords_flatten[:, None, :]
+#             # relative_coords = relative_coords.permute(1, 2, 0).contiguous()
+#             # relative_coords[:, :, 0] += self.window_size[0] - 1
+#             # relative_coords[:, :, 1] += self.window_size[1] - 1
+#             # relative_coords[:, :, 0] *= 2 * self.window_size[1] - 1
+#             self.seq_len = window_size[0] * window_size[1]
+#             self.biases = nn.Parameter(
+#                 torch.zeros(self.seq_len*k, num_heads)
+#             )
 
-        if len(self.window_size) == 3:
-            self.relative_position_bias_table = nn.Parameter(
-                torch.zeros(
-                    (2 * self.window_size[0] - 1) * (2 * self.window_size[1] - 1) * (2 * self.window_size[2] - 1),
-                    num_heads,
-                )
-            )
-            coords_d = torch.arange(self.window_size[0])
-            coords_h = torch.arange(self.window_size[1])
-            coords_w = torch.arange(self.window_size[2])
-            if mesh_args is not None:
-                coords = torch.stack(torch.meshgrid(coords_d, coords_h, coords_w, indexing="ij"))
-            else:
-                coords = torch.stack(torch.meshgrid(coords_d, coords_h, coords_w))
-            coords_flatten = torch.flatten(coords, 1)
-            relative_coords = coords_flatten[:, :, None] - coords_flatten[:, None, :]
-            relative_coords = relative_coords.permute(1, 2, 0).contiguous()
-            relative_coords[:, :, 0] += self.window_size[0] - 1
-            relative_coords[:, :, 1] += self.window_size[1] - 1
-            relative_coords[:, :, 2] += self.window_size[2] - 1
-            relative_coords[:, :, 0] *= (2 * self.window_size[1] - 1) * (2 * self.window_size[2] - 1)
-            relative_coords[:, :, 1] *= 2 * self.window_size[2] - 1
-        elif len(self.window_size) == 2:
-            self.relative_position_bias_table = nn.Parameter(
-                torch.zeros((2 * window_size[0] - 1) * (2 * window_size[1] - 1), num_heads)
-            )
-            coords_h = torch.arange(self.window_size[0])
-            coords_w = torch.arange(self.window_size[1])
-            if mesh_args is not None:
-                coords = torch.stack(torch.meshgrid(coords_h, coords_w, indexing="ij"))
-            else:
-                coords = torch.stack(torch.meshgrid(coords_h, coords_w))
-            coords_flatten = torch.flatten(coords, 1)
-            relative_coords = coords_flatten[:, :, None] - coords_flatten[:, None, :]
-            relative_coords = relative_coords.permute(1, 2, 0).contiguous()
-            relative_coords[:, :, 0] += self.window_size[0] - 1
-            relative_coords[:, :, 1] += self.window_size[1] - 1
-            relative_coords[:, :, 0] *= 2 * self.window_size[1] - 1
+#         # relative_position_index = relative_coords.sum(-1)
+#         # self.register_buffer("relative_position_index", relative_position_index)
+#         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
+#         self.attn_drop = nn.Dropout(attn_drop)
+#         self.proj_k = nn.Parameter(init_(torch.zeros(self.seq_len, k)))
 
-        relative_position_index = relative_coords.sum(-1)
-        self.register_buffer("relative_position_index", relative_position_index)
-        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
-        self.attn_drop = nn.Dropout(attn_drop)
-        self.proj = nn.Linear(dim, dim)
-        self.proj_drop = nn.Dropout(proj_drop)
-        trunc_normal_(self.relative_position_bias_table, std=0.02)
-        self.softmax = nn.Softmax(dim=-1)
+#         self.proj_k_len = k
+#         self.share_kv = share_kv
+#         if not share_kv:
+#             self.proj_v = nn.Parameter(init_(torch.zeros(self.seq_len, k)))
+#         self.proj = nn.Linear(dim, dim)
+#         self.proj_drop = nn.Dropout(proj_drop)
+#         trunc_normal_(self.biases, std=0.02)
+#         self.softmax = nn.Softmax(dim=-1)
 
-    def forward(self, x, mask):
-        b, n, c = x.shape
-        qkv = self.qkv(x).reshape(b, n, 3, self.num_heads, c // self.num_heads).permute(2, 0, 3, 1, 4)
-        q, k, v = qkv[0], qkv[1], qkv[2]
-        q = q * self.scale
-        attn = q @ k.transpose(-2, -1)
-        relative_position_bias = self.relative_position_bias_table[
-            self.relative_position_index.clone()[:n, :n].reshape(-1)
-        ].reshape(n, n, -1)
-        relative_position_bias = relative_position_bias.permute(2, 0, 1).contiguous()
-        attn = attn + relative_position_bias.unsqueeze(0)
-        if mask is not None:
-            nw = mask.shape[0]
-            attn = attn.view(b // nw, nw, self.num_heads, n, n) + mask.unsqueeze(1).unsqueeze(0)
-            attn = attn.view(-1, self.num_heads, n, n)
-            attn = self.softmax(attn)
-        else:
-            attn = self.softmax(attn)
+#     def forward(self, x, mask):
+#         b, n, c = x.shape
+#         qkv = self.qkv(x).reshape(b, n, 3, self.num_heads, c // self.num_heads).permute(2, 0, 3, 1, 4)
+#         q, k, v = qkv[0], qkv[1], qkv[2]
 
-        attn = self.attn_drop(attn).to(v.dtype)
-        x = (attn @ v).transpose(1, 2).reshape(b, n, c)
-        x = self.proj(x)
-        x = self.proj_drop(x)
-        return x
-
-
-class WLindowAttention(nn.Module):
-    """
-    Window based multi-head self attention module with relative position bias based on: "Liu et al.,
-    Swin Transformer: Hierarchical Vision Transformer using Shifted Windows
-    <https://arxiv.org/abs/2103.14030>"
-    https://github.com/microsoft/Swin-Transformer
-    """
-
-    def __init__(
-        self,
-        dim: int,
-        num_heads: int,
-        k: int,
-        window_size: Sequence[int],
-        qkv_bias: bool = False,
-        attn_drop: float = 0.0,
-        proj_drop: float = 0.0,
-        share_kv: bool = False
-    ) -> None:
-        """
-        Args:
-            dim: number of feature channels.
-            num_heads: number of attention heads.
-            window_size: local window size.
-            qkv_bias: add a learnable bias to query, key, value.
-            attn_drop: attention dropout rate.
-            proj_drop: dropout rate of output.
-        """
-
-        super().__init__()
-        self.dim = dim
-        self.window_size = window_size
-        self.num_heads = num_heads
-        head_dim = dim // num_heads
-        self.scale = head_dim**-0.5
-        # mesh_args = torch.meshgrid.__kwdefaults__
-        if len(self.window_size) == 3:
-            # self.relative_position_bias_table = nn.Parameter(
-            #     torch.zeros(
-            #         (2 * self.window_size[0] - 1) * (2 * self.window_size[1] - 1) * (2 * self.window_size[2] - 1),
-            #         num_heads,
-            #     )
-            # )
-            # coords_d = torch.arange(self.window_size[0])
-            # coords_h = torch.arange(self.window_size[1])
-            # coords_w = torch.arange(self.window_size[2])
-            # if mesh_args is not None:
-            #     coords = torch.stack(torch.meshgrid(coords_d, coords_h, coords_w, indexing="ij"))
-            # else:
-            #     coords = torch.stack(torch.meshgrid(coords_d, coords_h, coords_w))
-            # coords_flatten = torch.flatten(coords, 1)
-            # relative_coords = coords_flatten[:, :, None] - coords_flatten[:, None, :]
-            # relative_coords = relative_coords.permute(1, 2, 0).contiguous()
-            # relative_coords[:, :, 0] += self.window_size[0] - 1
-            # relative_coords[:, :, 1] += self.window_size[1] - 1
-            # relative_coords[:, :, 2] += self.window_size[2] - 1
-            # relative_coords[:, :, 0] *= (2 * self.window_size[1] - 1) * (2 * self.window_size[2] - 1)
-            # relative_coords[:, :, 1] *= 2 * self.window_size[2] - 1
-            self.seq_len = window_size[0] * window_size[1] * window_size[2]
-            self.biases = nn.Parameter(
-                torch.zeros(
-                    self.seq_len*k,
-                    num_heads,
-                )
-            )
-        elif len(self.window_size) == 2:
-            # self.relative_position_bias_table = nn.Parameter(
-            #     torch.zeros((2 * window_size[0] - 1) * (2 * window_size[1] - 1), num_heads)
-            # )
-            # coords_h = torch.arange(self.window_size[0])
-            # coords_w = torch.arange(self.window_size[1])
-            # if mesh_args is not None:
-            #     coords = torch.stack(torch.meshgrid(coords_h, coords_w, indexing="ij"))
-            # else:
-            #     coords = torch.stack(torch.meshgrid(coords_h, coords_w))
-            # coords_flatten = torch.flatten(coords, 1)
-            # relative_coords = coords_flatten[:, :, None] - coords_flatten[:, None, :]
-            # relative_coords = relative_coords.permute(1, 2, 0).contiguous()
-            # relative_coords[:, :, 0] += self.window_size[0] - 1
-            # relative_coords[:, :, 1] += self.window_size[1] - 1
-            # relative_coords[:, :, 0] *= 2 * self.window_size[1] - 1
-            self.seq_len = window_size[0] * window_size[1]
-            self.biases = nn.Parameter(
-                torch.zeros(self.seq_len*k, num_heads)
-            )
-
-        # relative_position_index = relative_coords.sum(-1)
-        # self.register_buffer("relative_position_index", relative_position_index)
-        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
-        self.attn_drop = nn.Dropout(attn_drop)
-        self.proj_k = nn.Parameter(init_(torch.zeros(self.seq_len, k)))
-
-        self.proj_k_len = k
-        self.share_kv = share_kv
-        if not share_kv:
-            self.proj_v = nn.Parameter(init_(torch.zeros(self.seq_len, k)))
-        self.proj = nn.Linear(dim, dim)
-        self.proj_drop = nn.Dropout(proj_drop)
-        trunc_normal_(self.biases, std=0.02)
-        self.softmax = nn.Softmax(dim=-1)
-
-    def forward(self, x, mask):
-        b, n, c = x.shape
-        qkv = self.qkv(x).reshape(b, n, 3, self.num_heads, c // self.num_heads).permute(2, 0, 3, 1, 4)
-        q, k, v = qkv[0], qkv[1], qkv[2]
-
-        proj_seq_len = lambda args: torch.einsum('bwnd,nk->bwkd', *args)
-        v = v if not self.share_kv else k
-        kv_projs = (self.proj_k, self.proj_v if not self.share_kv else self.proj_k)
-        kv_projs = map(lambda t: t[:n], kv_projs)
-        k, v = map(proj_seq_len, zip((k, v), kv_projs))
+#         proj_seq_len = lambda args: torch.einsum('bwnd,nk->bwkd', *args)
+#         v = v if not self.share_kv else k
+#         kv_projs = (self.proj_k, self.proj_v if not self.share_kv else self.proj_k)
+#         kv_projs = map(lambda t: t[:n], kv_projs)
+#         k, v = map(proj_seq_len, zip((k, v), kv_projs))
 
 
-        q = q * self.scale
-        # if mask is not None:
-        #     print(q.shape, mask.shape)
-        #     nw = mask.shape[0]
-        #     q = nn.functional.relu(q)
-        #     q = q.view(b // nw, nw, self.num_heads, n, n) + mask.unsqueeze(1).unsqueeze(0)
-        #     q = q.view(-1, self.num_heads, n, n)
+#         q = q * self.scale
+#         # if mask is not None:
+#         #     print(q.shape, mask.shape)
+#         #     nw = mask.shape[0]
+#         #     q = nn.functional.relu(q)
+#         #     q = q.view(b // nw, nw, self.num_heads, n, n) + mask.unsqueeze(1).unsqueeze(0)
+#         #     q = q.view(-1, self.num_heads, n, n)
 
-        attn = torch.einsum('bhnd,bhkd->bhnk', q, k)
-        # relative_position_bias = self.relative_position_bias_table[
-        #     self.relative_position_index.clone()[:n, :n].reshape(-1)
-        # ].reshape(n, n, -1)
-        # relative_position_bias = relative_position_bias.permute(2, 0, 1).contiguous()
-        # print(self.relative_position_bias_table.shape)
-        # print(n, attn.shape, relative_position_bias, self.relative_position_index.clone().shape)
+#         attn = torch.einsum('bhnd,bhkd->bhnk', q, k)
+#         # relative_position_bias = self.relative_position_bias_table[
+#         #     self.relative_position_index.clone()[:n, :n].reshape(-1)
+#         # ].reshape(n, n, -1)
+#         # relative_position_bias = relative_position_bias.permute(2, 0, 1).contiguous()
+#         # print(self.relative_position_bias_table.shape)
+#         # print(n, attn.shape, relative_position_bias, self.relative_position_index.clone().shape)
 
-        # attn = attn + relative_position_bias.unsqueeze(0)
-        attn = attn + self.biases[:n*self.proj_k_len].reshape(-1, n, self.proj_k_len).unsqueeze(0)
-        attn = self.softmax(attn)
-        attn = self.attn_drop(attn).to(v.dtype)
-        x = torch.einsum('bhnk,bhkd->bhnd', attn, v).transpose(1, 2).reshape(b, n, c)
-        x = self.proj(x)
-        x = self.proj_drop(x)
-        return x
+#         # attn = attn + relative_position_bias.unsqueeze(0)
+#         attn = attn + self.biases[:n*self.proj_k_len].reshape(-1, n, self.proj_k_len).unsqueeze(0)
+#         attn = self.softmax(attn)
+#         attn = self.attn_drop(attn).to(v.dtype)
+#         x = torch.einsum('bhnk,bhkd->bhnd', attn, v).transpose(1, 2).reshape(b, n, c)
+#         x = self.proj(x)
+#         x = self.proj_drop(x)
+#         return x
 
 class SwinTransformerBlock(nn.Module):
     """
@@ -707,7 +599,8 @@ class SwinTransformerBlock(nn.Module):
         act_layer: str = "GELU",
         norm_layer: type[LayerNorm] = nn.LayerNorm,
         use_checkpoint: bool = False,
-        use_wlin: int = -1
+        use_wlin: int = -1,
+        use_flash: bool = True
     ) -> None:
         """
         Args:
@@ -742,7 +635,8 @@ class SwinTransformerBlock(nn.Module):
             qkv_bias=qkv_bias,
             attn_drop=attn_drop,
             proj_drop=drop,
-        ) if use_wlin >0 else WindowAttention(
+            use_flash=use_flash
+        ) if use_wlin > 0  or use_flash else WindowAttention(
             dim,
             window_size=self.window_size,
             num_heads=num_heads,
@@ -1001,7 +895,8 @@ class BasicLayer(nn.Module):
         norm_layer: type[LayerNorm] = nn.LayerNorm,
         downsample: nn.Module | None = None,
         use_checkpoint: bool = False,
-        use_wlin=-1
+        use_wlin=-1,
+        use_flash: bool= True
     ) -> None:
         """
         Args:
@@ -1039,7 +934,8 @@ class BasicLayer(nn.Module):
                     drop_path=drop_path[i] if isinstance(drop_path, list) else drop_path,
                     norm_layer=norm_layer,
                     use_checkpoint=use_checkpoint,
-                    use_wlin=use_wlin
+                    use_wlin=use_wlin,
+                    use_flash=use_flash
                 )
                 for i in range(depth)
             ]
@@ -1108,7 +1004,8 @@ class SwinTransformer(nn.Module):
         spatial_dims: int = 3,
         downsample="merging",
         use_v2=False,
-        use_wlin=-1
+        use_wlin=-1,
+        use_flash: bool = True
     ) -> None:
         """
         Args:
@@ -1173,7 +1070,8 @@ class SwinTransformer(nn.Module):
                 norm_layer=norm_layer,
                 downsample=down_sample_mod,
                 use_checkpoint=use_checkpoint,
-                use_wlin=use_wlin
+                use_wlin=use_wlin,
+                use_flash=use_flash
             )
             if i_layer == 0:
                 self.layers1.append(layer)

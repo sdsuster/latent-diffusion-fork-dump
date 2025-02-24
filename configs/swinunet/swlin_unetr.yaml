@@ -1,5 +1,5 @@
 model:
-  base_learning_rate: 3e-5
+  base_learning_rate: 6e-5
   target: ldm.modules.vitvq3d.models.vitae.Vit_Seg_Trainer
   params:
     # modalities: ['t1', 't1ce', 't2', 'flair']
@@ -11,14 +11,14 @@ model:
         in_channels: 4
         feature_size: 48
         img_size: [96, 96, 96]
-        # window_size: [7, 7, 7]
+        # window_size: [10, 10, 10]
         # patch_size: [2, 2, 2]
         # depths: [2, 2, 2]
         # num_heads: [ 3, 6, 12, 24 ] 
         # drop_path_rate: 0.2
         out_channels: 3
         use_checkpoint: False
-        use_wlin: 125
+        use_wlin: 216
     lossconfig:
       target: monai.losses.DiceLoss
       params:
@@ -34,8 +34,8 @@ model:
 data:
   target: main.DataModuleFromConfig
   params:
-    batch_size: 4
-    num_workers: 16
+    batch_size: 3
+    num_workers: 8
     wrap: false
     train:
       target: ldm.data.brats_monai.BratsSegFoldDataset
@@ -59,7 +59,7 @@ lightning:
         rescale: False
   trainer:
     benchmark: True
-    # precision: 16-true
+    precision: bf16
     max_epochs: 300
-    devices: 0,1
-    check_val_every_n_epoch: 10
+    devices: 0,1,2
+    check_val_every_n_epoch: 3

@@ -39,10 +39,10 @@ def get_brats_seg_fold_dataset(json_path, fold=1, roi_size = [96, 96, 96], is_va
 
     val_transform = transforms.Compose(
         [
-            transforms.LoadImaged(keys=["image", "label"]),
+            transforms.LoadImaged(keys=["image", "label", "original_image"]),
             transforms.ConvertToMultiChannelBasedOnBratsClassesd(keys="label"),
             transforms.NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
-            transforms.ToTensord(keys=["image", "label"]),
+            transforms.ToTensord(keys=["image", "label", "original_image"]),
         ]
     )
         # Function to load specific fold data
@@ -61,6 +61,9 @@ def get_brats_seg_fold_dataset(json_path, fold=1, roi_size = [96, 96, 96], is_va
             raise ValueError(f"Fold {fold_idx} does not exist in the provided file.")
 
     train_files = load_fold_data(fold, json_path)
+    if is_val:
+        for file in train_files:
+            file['original_image'] = file['image']
 
     print(f"Files for fold {fold}: {len(train_files)}")
 

@@ -1,5 +1,5 @@
 model:
-  base_learning_rate: 1.e-4
+  base_learning_rate: 6e-5
   target: ldm.modules.vitvq3d.models.vitae.Vit_Seg_Trainer
   params:
     # modalities: ['t1', 't1ce', 't2', 'flair']
@@ -44,12 +44,12 @@ data:
       target: ldm.data.brats_monai.BratsSegFoldDataset
       params:
         data_path: ./brats_folds.json # to be filled
-        fold: 5
+        fold: 1
     validation:
       target: ldm.data.brats_monai.BratsSegValFoldDataset
       params:
         data_path: ./brats_folds.json # to be filled
-        fold: 5
+        fold: 1
 
 lightning:
   callbacks:
@@ -62,7 +62,7 @@ lightning:
         rescale: False
   trainer:
     benchmark: True
-    # precision: 16-true
+    precision: bf16
     max_epochs: 300
     devices: 0,1,2
     check_val_every_n_epoch: 10

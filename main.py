@@ -386,7 +386,8 @@ class ImageLogger(Callback):
                 image.save(path)
             try:
                 logger.experiment.log_image(image, name=f"{split}_{filename}")
-            except:
+            except Exception as e:
+                print(e)
                 pass
     def log_img(self, pl_module, batch, batch_idx, split="train"):
         check_idx = batch_idx if self.log_on_batch_idx else pl_module.global_step
