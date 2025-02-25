@@ -62,4 +62,4 @@ lightning:
     precision: bf16
     max_epochs: 300
     devices: 0,1,2
-    check_val_every_n_epoch: 3
+    check_val_every_n_epoch: 10

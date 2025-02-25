@@ -247,6 +247,7 @@ class Vit_Seg_Trainer(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         x, target = self.get_input(batch, self.image_key)
+        batch_size = x.shape[0]
         model_start_time = time.time()  # Start the timer
         pred= self(x) #, qloss, ind 
         model_end_time = time.time()  # End the timer
@@ -255,9 +256,9 @@ class Vit_Seg_Trainer(pl.LightningModule):
         loss = self.loss(pred.contiguous(), target.contiguous())
         loss = torch.mean(loss)
         self.log(f"train/model_time", model_time,
-                   prog_bar=False, logger=True, on_step=True, on_epoch=True, sync_dist=True)
+                   prog_bar=False, logger=True, on_step=True, on_epoch=True, sync_dist=True, batch_size = batch_size)
         self.log(f"train/dice_loss", loss,
-                   prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=True)
+                   prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=True, batch_size = batch_size)
         
         # with torch.no_grad():
         #     pred_post = self.post_trans(pred)
@@ -370,6 +371,7 @@ class Vit_Seg_Trainer(pl.LightningModule):
     def _validation_step(self, batch, batch_idx, suffix=""):
         
         x, target = self.get_input(batch, self.image_key)
+        batch_size = x.shape[0]
         pred= self.model_inferer(x) #, qloss, ind 
 
         loss = self.loss(pred.contiguous(), target.contiguous())
@@ -391,7 +393,7 @@ class Vit_Seg_Trainer(pl.LightningModule):
             self.log(f"train/dice_acc{i}", v,
                     prog_bar=False, logger=True, on_step=False, on_epoch=True, sync_dist=True)
         self.log(f"val/dice_acc", torch.mean(acc),
-                prog_bar=True, logger=True, on_step=False, on_epoch=True, sync_dist=True)
+                prog_bar=True, logger=True, on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
         return loss
     
     def load_encoder_weights_frozen(self):
