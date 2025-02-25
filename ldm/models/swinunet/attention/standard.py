@@ -18,9 +18,8 @@ def init_t_xy(end_x: int, end_y: int, zero_center=False):
 def init_t_xyz(end_x: int, end_y: int, end_z: int, zero_center=False):
     t = torch.arange(end_x * end_y * end_z, dtype=torch.float32)
     t_x = (t % end_x).float()
-    t_y = torch.div(t, end_x, rounding_mode='floor').float()
-    t_z = torch.div(t, end_z, rounding_mode='floor').float()
-    
+    t_y = ((t // end_x) % end_y).float()  # Compute y-axis
+    t_z = (t // (end_x * end_y)).float()  # Compute z-axis
     return t_x, t_y, t_z
 
 def init_random_2d_freqs(head_dim: int, num_heads: int, theta: float = 10.0, rotate: bool = True):
@@ -44,21 +43,24 @@ def init_random_3d_freqs(head_dim: int, num_heads: int, theta: float = 10.0, rot
     freqs_y = []
     freqs_z = []
     theta = theta
-    mag = 1 / (theta ** (torch.arange(0, head_dim, 4)[: (head_dim // 4)].float() / head_dim))
-    for i in range(num_heads):
-        angles = torch.rand(1) * 2 * torch.pi if rotate else torch.zeros(1)
-        fx = torch.cat([mag * torch.cos(angles), mag * torch.cos(torch.pi/2 + angles)], dim=-1)
-        fy = torch.cat([mag * torch.sin(angles), mag * torch.sin(torch.pi/2 + angles)], dim=-1)
-        fz = torch.cat([mag * torch.sin(angles), mag * torch.cos(angles)], dim=-1)
-        freqs_x.append(fx)
-        freqs_y.append(fy)
-        freqs_z.append(fz)
-    freqs_x = torch.stack(freqs_x, dim=0)
-    freqs_y = torch.stack(freqs_y, dim=0)
-    freqs_z = torch.stack(freqs_z, dim=0)
-    freqs = torch.stack([freqs_x, freqs_y, freqs_z], dim=0)
+    
+    with torch.amp.autocast('cuda', enabled=False):
+        mag = 1 / (theta ** (torch.arange(0, head_dim, 4)[: (head_dim // 4)].float() / head_dim))
+        for i in range(num_heads):
+            angles = torch.rand(1) * 2 * torch.pi if rotate else torch.zeros(1)
+            fx = torch.cat([mag * torch.cos(angles), mag * torch.cos(torch.pi/2 + angles)], dim=-1)
+            fy = torch.cat([mag * torch.sin(angles), mag * torch.sin(torch.pi/2 + angles)], dim=-1)
+            fz = torch.cat([mag * torch.sin(angles), mag * torch.cos(angles)], dim=-1)
+            freqs_x.append(fx)
+            freqs_y.append(fy)
+            freqs_z.append(fz)
+        freqs_x = torch.stack(freqs_x, dim=0)
+        freqs_y = torch.stack(freqs_y, dim=0)
+        freqs_z = torch.stack(freqs_z, dim=0)
+        freqs = torch.stack([freqs_x, freqs_y, freqs_z], dim=0)
     return freqs
 
+import numpy as np
 def compute_cis(freqs: torch.Tensor, t_x: torch.Tensor, t_y: torch.Tensor, t_z: torch.Tensor = None):
     N = t_x.shape[0]
     # No float 16 for this range
@@ -89,11 +91,12 @@ def apply_rotary_emb(
     xk: torch.Tensor,
     freqs_cis: torch.Tensor,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
-    xk_ = torch.view_as_complex(xk.float().reshape(*xk.shape[:-1], -1, 2))
-    freqs_cis = reshape_for_broadcast(freqs_cis, xq_)
-    xq_out = torch.view_as_real(xq_ * freqs_cis).flatten(3)
-    xk_out = torch.view_as_real(xk_ * freqs_cis).flatten(3)
+    with torch.amp.autocast('cuda', enabled=False):
+        xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
+        xk_ = torch.view_as_complex(xk.float().reshape(*xk.shape[:-1], -1, 2))
+        freqs_cis = reshape_for_broadcast(freqs_cis, xq_)
+        xq_out = torch.view_as_real(xq_ * freqs_cis).flatten(3)
+        xk_out = torch.view_as_real(xk_ * freqs_cis).flatten(3)
     return xq_out.type_as(xq).to(xq.device), xk_out.type_as(xk).to(xk.device)
 
 def init_(tensor: torch.Tensor):

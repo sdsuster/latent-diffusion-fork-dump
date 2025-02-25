@@ -19,6 +19,7 @@ from monai import data, transforms
 from monai.data import load_decathlon_datalist
 import torch.distributed
 import torch.utils
+from numpy import random
 import torch.utils.data
 
 class Sampler(torch.utils.data.Sampler):
@@ -68,7 +69,7 @@ class Sampler(torch.utils.data.Sampler):
         self.epoch = epoch
 
 
-def get_dataset(data_dir, json_list, crop_size, test_mode = False, is_train = False):
+def get_dataset(data_dir, json_list, crop_size, test_mode = False, is_train = False, repeat = 0):
     data_dir = data_dir
     datalist_json = os.path.join(data_dir, json_list)
     train_transform = transforms.Compose(
@@ -133,7 +134,15 @@ def get_dataset(data_dir, json_list, crop_size, test_mode = False, is_train = Fa
 
     if test_mode:
         test_files = load_decathlon_datalist(datalist_json, True, "validation", base_dir=data_dir)
-        test_ds = data.Dataset(data=test_files, transform=test_transform)
+
+                
+        extended_files = test_files[:]
+
+        for _ in range(repeat):  # Repeat 20 times
+            shuffled = test_files[:]  # Copy the list
+            random.shuffle(shuffled)  # Shuffle the copy
+            extended_files.extend(shuffled)  # Add to final list
+        test_ds = data.Dataset(data=extended_files, transform=test_transform)
         # test_sampler = Sampler(test_ds, shuffle=False) if args.distributed else None
         # test_loader = data.DataLoader(
         #     test_ds,
@@ -148,9 +157,15 @@ def get_dataset(data_dir, json_list, crop_size, test_mode = False, is_train = Fa
     else:
         if is_train:
             datalist = load_decathlon_datalist(datalist_json, True, "training", base_dir=data_dir)
+            extended_files = datalist[:]
+
+            for _ in range(repeat):  # Repeat 20 times
+                shuffled = datalist[:]  # Copy the list
+                random.shuffle(shuffled)  # Shuffle the copy
+                extended_files.extend(shuffled)  # Add to final list
             # print(datalist[0])
             # exit()
-            train_ds = data.Dataset(data=datalist, transform=train_transform)
+            train_ds = data.Dataset(data=extended_files, transform=train_transform)
         # train_sampler = Sampler(train_ds) if distributed else None
         # train_loader = data.DataLoader(
         #     train_ds,
@@ -164,7 +179,13 @@ def get_dataset(data_dir, json_list, crop_size, test_mode = False, is_train = Fa
         else:
 
             val_files = load_decathlon_datalist(datalist_json, True, "validation", base_dir=data_dir)
-            val_ds = data.Dataset(data=val_files, transform=val_transform)
+            extended_files = val_files[:]
+
+            for _ in range(repeat):  # Repeat 20 times
+                shuffled = val_files[:]  # Copy the list
+                random.shuffle(shuffled)  # Shuffle the copy
+                extended_files.extend(shuffled)  # Add to final list
+            val_ds = data.Dataset(data=extended_files, transform=val_transform)
             # val_sampler = Sampler(val_ds, shuffle=False) if distributed else None
             # val_loader = data.DataLoader(
             #     val_ds, batch_size=1, shuffle=False, num_workers=args.workers, sampler=val_sampler, pin_memory=True
@@ -175,9 +196,9 @@ def get_dataset(data_dir, json_list, crop_size, test_mode = False, is_train = Fa
         
 class BTCVSegTrainDataset(torch.utils.data.Dataset):
     
-    def __init__(self, data_dir, json_list, crop_size = [96, 96, 96]):
+    def __init__(self, data_dir, json_list, crop_size = [96, 96, 96], repeat = 0):
         super().__init__()
-        self.data = get_dataset(data_dir=data_dir, json_list=json_list, crop_size=crop_size, test_mode=False, is_train=True)
+        self.data = get_dataset(data_dir=data_dir, json_list=json_list, crop_size=crop_size, test_mode=False, is_train=True, repeat=repeat)
 
     def __len__(self):
         return len(self.data)
@@ -187,9 +208,9 @@ class BTCVSegTrainDataset(torch.utils.data.Dataset):
 
 class BTCVSegValDataset(torch.utils.data.Dataset):
     
-    def __init__(self, data_dir, json_list  , crop_size = [96, 96, 96]):
+    def __init__(self, data_dir, json_list  , crop_size = [96, 96, 96], repeat = 0):
         super().__init__()
-        self.data = get_dataset(data_dir=data_dir, json_list=json_list, crop_size=crop_size, test_mode=False, is_train=False)
+        self.data = get_dataset(data_dir=data_dir, json_list=json_list, crop_size=crop_size, test_mode=False, is_train=False, repeat=repeat)
 
     def __len__(self):
         return len(self.data)
@@ -199,9 +220,9 @@ class BTCVSegValDataset(torch.utils.data.Dataset):
     
 class BTCVSegTestDataset(torch.utils.data.Dataset):
     
-    def __init__(self, data_dir, json_list  , crop_size = [96, 96, 96]):
+    def __init__(self, data_dir, json_list  , crop_size = [96, 96, 96], repeat = 0):
         super().__init__()
-        self.data = get_dataset(data_dir=data_dir, json_list=json_list, crop_size=crop_size, test_mode=True, is_train=False)
+        self.data = get_dataset(data_dir=data_dir, json_list=json_list, crop_size=crop_size, test_mode=True, is_train=False, repeat=repeat)
 
     def __len__(self):
         return len(self.data)

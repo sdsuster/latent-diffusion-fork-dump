@@ -23,6 +23,24 @@ import numpy as np
 # from ..util import read_video, padding_video, DownloadProgressBar
 
 
+def minmax_scale_torch(tensor, min_target=0, max_target=1):
+    """
+    Scales a PyTorch tensor to a specific range [min_target, max_target].
+
+    Args:
+        tensor (torch.Tensor): Input tensor.
+        min_target (float): Lower bound of the target range.
+        max_target (float): Upper bound of the target range.
+
+    Returns:
+        torch.Tensor: Scaled tensor in the range [min_target, max_target].
+    """
+    min_val = tensor.min()
+    max_val = tensor.max()
+    
+    scaled_tensor = (tensor - min_val) * (max_target - min_target) / (max_val - min_val + 1e-8) + min_target
+    return scaled_tensor
+
 class Vit_VQ_Trainer(pl.LightningModule):
 
     def __init__(self,
@@ -219,17 +237,23 @@ class Vit_Seg_Trainer(pl.LightningModule):
         self.to_one_hot = to_one_hot
         
         self.model_inferer = partial(
-        sliding_window_inference,
-        roi_size=modelconfig['params']['img_size'],
-        sw_batch_size=4,
-        predictor=self,
-        overlap=0.1,
-    )
+            sliding_window_inference,
+            roi_size=modelconfig['params']['img_size'],
+            sw_batch_size=4,
+            predictor=self,
+            overlap=0.1,
+        )
+       
+        num_classes = self.model.out_channels
+        rng = np.random.RandomState(32)
+        self.colormap = {i: rng.randint(0, 255, size=(3,)).tolist() for i in range(num_classes + 1)}
+        self.colormap[0] = [0, 0, 0]  # Ensure class 0 is black
+
         if to_one_hot:
-            self.post_label = AsDiscrete(to_onehot=modelconfig['params']['out_channels'])
+            self.post_label = AsDiscrete(to_onehot=num_classes, dim=1)
             self.post_trans = Compose([
-                                        Activations(sigmoid= self.activation_fn == 'sigmoid', softmax= self.activation_fn == 'softmax'),
-                                        AsDiscrete(threshold=0.5, to_onehot=modelconfig['params']['out_channels'])
+                                        Activations(sigmoid= self.activation_fn == 'sigmoid', softmax= self.activation_fn == 'softmax', dim = 1),
+                                        AsDiscrete(argmax=True, to_onehot=num_classes, dim=1)
                                        ])
         else:
             self.post_label = None
@@ -314,15 +338,55 @@ class Vit_Seg_Trainer(pl.LightningModule):
                     del sd[k]
         self.load_state_dict(sd, strict=False)
         print(f"Restored from {path}")
+
+
+    def apply_colormap(self, segmentation_output):
+        """
+        Convert a multi-channel segmentation output into a 3-channel color image.
+        
+        Args:
+            segmentation_output (numpy array): Shape (num_classes, height, width).
+            colormap (dict, optional): A dictionary mapping class indices to RGB colors.
+
+        Returns:
+            color_image (numpy array): Shape (height, width, 3), RGB format.
+        """
+        # Step 1: Get the predicted class per pixel
+        label_map = np.argmax(segmentation_output, axis=0)  # Shape (height, width)
+
+        # Step 3: Create an empty RGB image
+        height, width = label_map.shape
+        color_image = np.zeros((height, width, 3), dtype=np.uint8)
+
+        # Step 4: Assign colors to each pixel
+        for class_id, color in self.colormap.items():
+            color_image[label_map == class_id] = color
+
+        color_image = np.transpose(color_image, (2, 0, 1)).astype(np.float32)
+        return color_image/255.
     
-    def log_images(self, batch, only_inputs=False, plot_ema=False, split='train', **kwargs):
+    def sigmoid_to_softmax_map(self, class_labels):
+        prob = class_labels
+        # class_labels = torch.argmax(class_labels, dim=1)  # Shape: [batch_size, height, width]
+        seg = (prob > 0.5).astype(np.int8)
+        
+        color_images = np.zeros(seg.shape)
+
+        color_images[:, 2][seg[:, 2] == 1] = 3.
+        color_images[:, 1][seg[:, 1] == 1] = 2.
+        color_images[:, 0][seg[:, 0] == 1] = 1.
+        return color_images
+    
+    def log_images(self, batch, only_inputs=False, plot_ema=False, additional_logs = [], split='train', **kwargs):
         log = dict()
         x, y = self.get_input(batch, self.image_key)
         y = y.to(torch.float)
 
+        d_half = x.shape[-1]//2
+
         # x = x.to(self.device)
         if only_inputs:
-            log["inputs"] = x[:, :, :, :, 30]
+            log["inputs"] = x[:, :, :, :, d_half]
             return log
         with torch.no_grad():
             with torch.amp.autocast("cuda"):
@@ -330,37 +394,63 @@ class Vit_Seg_Trainer(pl.LightningModule):
                     xrec= self.model_inferer(x)
                 else:
                     xrec= self(x) #, _ 
-        class_labels = y[:, :, :, :, 30]
-        # Step 1: Convert logits to class labels using argmax
-        # prob = torch.sigmoid(class_labels)
-        prob = class_labels
-        class_labels = torch.argmax(class_labels, dim=1)  # Shape: [batch_size, height, width]
-        seg = (prob > 0.5).astype(np.int8)
+
+        pred_post = self.post_trans(xrec)
+
+        if self.post_label is not None:
+            label_post = self.post_label(y) 
+        else: 
+            label_post = y
+        class_labels = label_post[:, :, :, :, d_half]
         
-        color_images = np.zeros(seg.shape)
+        if self.activation_fn == 'sigmoid':
+            color_images = []
+            for i in range(class_labels.shape[0]):
+                segmentation_output = self.sigmoid_to_softmax_map(class_labels[i].cpu().numpy().squeeze())
+                color_images.append(self.apply_colormap(segmentation_output))
 
-        color_images[:, 2][seg[:, 2] == 1] = 1.
-        color_images[:, 1][seg[:, 1] == 1] = 1.
-        color_images[:, 0][seg[:, 0] == 1] = 1.
-        log["labels"] = torch.tensor(color_images)
+            log["labels"] = torch.tensor(np.array(color_images))
+        elif self.activation_fn == 'softmax':
+            color_images = []
+            for i in range(class_labels.shape[0]):
+                color_images.append(self.apply_colormap(class_labels[i].cpu().numpy().squeeze()))
+            log["labels"] = torch.tensor(np.array(color_images))
 
-        class_labels = xrec[:, :, :, :, 30]
-        prob = torch.sigmoid(class_labels).cpu().numpy()
+        class_labels = pred_post[:, :, :, :, d_half]
+        
+        if self.activation_fn == 'sigmoid':
+            color_images = []
+            for i in range(class_labels.shape[0]):
+                segmentation_output = self.sigmoid_to_softmax_map(class_labels[i].cpu().numpy().squeeze())
+                color_images.append(self.apply_colormap(segmentation_output))
+            log["prediction"] = torch.tensor(np.array(color_images))
+        elif self.activation_fn == 'softmax':
+            color_images = []
+            for i in range(class_labels.shape[0]):
+                color_images.append(self.apply_colormap(class_labels[i].cpu().numpy().squeeze()))
+            log["prediction"] = torch.tensor(np.array(color_images))
+            
+        # prob = torch.sigmoid(class_labels).cpu().numpy()
         # prob = class_labels
         # class_labels = torch.argmax(class_labels, dim=1)  # Shape: [batch_size, height, width]
-        seg = (prob > 0.5).astype(np.int8)
+        # seg = (prob > 0.5).astype(np.int8)
         
-        color_images = np.zeros(seg.shape)
+        # color_images = np.zeros(seg.shape)
 
-        color_images[:, 2][seg[:, 2] == 1] = 1.
-        color_images[:, 1][seg[:, 1] == 1] = 1.
-        color_images[:, 0][seg[:, 0] == 1] = 1.
+        # color_images[:, 2][seg[:, 2] == 1] = 3.
+        # color_images[:, 1][seg[:, 1] == 1] = 2.
+        # color_images[:, 0][seg[:, 0] == 1] = 1.
         # color_images[:, 0][seg[:, 0] == 0] = 0.
         # color_images[:, 1][seg[:, 1] == 0] = 0.
-        if split != 'train':
-            log["original"] = batch['original_image'][:, 1, :, :, 30]
-        log["inputs"] = x[:, :, :, :, 30]
-        log["prediction"] = torch.tensor(color_images)
+        # if split != 'train':
+        #     log["original"] = batch['original_image'][:, 1, :, :, d_half]
+        if x.shape[1] == 3:
+            log["inputs"] = x[:, :, :, :, d_half]
+        else:
+            log["inputs"] = x[:, 0:1, :, :, d_half].repeat(1, 3, 1, 1)  
+
+        # exit()
+        # log["prediction"] = torch.tensor(color_images)
 
         return log
 
@@ -379,7 +469,6 @@ class Vit_Seg_Trainer(pl.LightningModule):
         self.log(f"val/dice_loss", loss,
                    prog_bar=True, logger=True, on_step=False, on_epoch=True, sync_dist=True)
         pred_post = self.post_trans(pred)
-
         if self.post_label is not None:
             label_post = self.post_label(target)  
         else: 

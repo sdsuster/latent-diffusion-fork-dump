@@ -383,14 +383,16 @@ class ImageLogger(Callback):
                   global_step, current_epoch, batch_idx, logger):
         root = os.path.join(self.save_dir, "images", split)
         for k in images:
-            grid = torchvision.utils.make_grid(images[k], nrow=2)
+            grid = torchvision.utils.make_grid(images[k], nrow=2).permute(1, 2, 0)
             if self.rescale:
                 grid = (grid + 1.0) / 2.0  # -1,1 -> 0,1; c,h,w
-            grid = grid.transpose(0, 1).transpose(1, 2).squeeze(-1)
+            # grid = grid.transpose(0, 1).transpose(1, 2).squeeze(-1)
             grid = grid.numpy()
-            grid[grid < 0.] = 0
-            grid[grid > 1.] = 1.
+            # grid[grid < 0.] = 0
+            # grid[grid > 1.] = 1.
             grid = (grid * 255.).astype(np.uint8)
+            # grid = (grid).astype(np.uint8)
+            # print(grid, grid.min(), grid.max(), grid.mean())
             filename = "{}_gs-{:06}_e-{:06}_b-{:06}.png".format(
                 k,
                 global_step,
@@ -579,6 +581,7 @@ if __name__ == "__main__":
     ckptdir = os.path.join(logdir, "checkpoints")
     cfgdir = os.path.join(logdir, "configs")
     seed_everything(opt.seed)
+    np.random.seed(opt.seed)
 
     try:
         # init and save configs
@@ -691,15 +694,15 @@ if __name__ == "__main__":
                     "lightning_config": lightning_config,
                 }
             },
-            # "image_logger": {
-            #     "target": "main.ImageLogger",
-            #     "params": {
-            #         "batch_frequency": 750,
-            #         "max_images": 4,
-            #         "clamp": True,
-            #         "save_dir" : logdir
-            #     }
-            # },
+            "image_logger": {
+                "target": "main.ImageLogger",
+                "params": {
+                    "batch_frequency": 750,
+                    "max_images": 4,
+                    "clamp": True,
+                    "save_dir" : logdir
+                }
+            },
             "learning_rate_logger": {
                 "target": "main.LearningRateMonitor",
                 "params": {
