@@ -7,3 +7,6 @@ checkpoints/
 download.py
 lightning_logs
 jsons/*
+
+brats_folds.json
+brats_folds buf.json
