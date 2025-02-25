@@ -1,5 +1,5 @@
 model:
-  base_learning_rate: 0.75e-5
+  base_learning_rate: 0.5e-4
   target: ldm.modules.vitvq3d.models.vitae.Vit_Seg_Trainer
   params:
     # modalities: ['t1', 't1ce', 't2', 'flair']
@@ -20,6 +20,7 @@ model:
         # drop_path_rate: 0.2
         out_channels: 14
         use_checkpoint: False
+        use_flash: False
         # use_wlin: 125
     lossconfig:
       target: monai.losses.DiceLoss
@@ -63,9 +64,9 @@ lightning:
     #     rescale: False
   trainer:
     benchmark: True
-    precision: bf16
-    max_epochs: 600
+    precision: bf16-mixed
+    max_epochs: 5000
     devices: 0,1
-    check_val_every_n_epoch: 10
+    check_val_every_n_epoch: 100
     log_every_n_steps: 6
     num_sanity_val_steps: 0

@@ -5,7 +5,6 @@ from abc import ABC, abstractmethod
 import torch
 from torch import Tensor
 from ldm.util import instantiate_from_config
-from taming.modules.vqvae.quantize import VectorQuantizer2
 from packaging import version
 
 # from ..config import resolve_config, Downloadable

@@ -85,7 +85,8 @@ class SwinUNETR(nn.Module):
         spatial_dims: int = 3,
         downsample="merging",
         use_v2=False,
-        use_wlin=-1
+        use_wlin=-1,
+        use_flash=False
     ) -> None:
         """
         Args:
@@ -164,7 +165,8 @@ class SwinUNETR(nn.Module):
             spatial_dims=spatial_dims,
             downsample=look_up_option(downsample, MERGING_MODE) if isinstance(downsample, str) else downsample,
             use_v2=use_v2,
-            use_wlin=use_wlin
+            use_wlin=use_wlin,
+            use_flash=use_flash
         )
 
         self.encoder1 = UnetrBasicBlock(
