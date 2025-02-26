@@ -246,7 +246,7 @@ def generate_fold(training_folder):
                     for name in file_list
                 ]
     # Ensure randomness
-    np.random.shuffle(file_list)
+    # np.random.shuffle(file_list)
 
     # Define 5-fold cross-validation
     kf = KFold(n_splits=5, shuffle=True, random_state=42)
