@@ -80,6 +80,7 @@ def get_dataset(data_dir, json_list, crop_size, test_mode = False, is_train = Fa
             transforms.Spacingd(
                 keys=["image", "label"], pixdim=(1.5, 1.5, 2.0), mode=("bilinear", "nearest")
             ),
+            transforms.EnsureTyped(keys=["image", "label"], track_meta=False),
             transforms.ScaleIntensityRanged(
                 keys=["image"], a_min=-175.0, a_max=250.0, b_min=0.0, b_max=1.0, clip=True
             ),

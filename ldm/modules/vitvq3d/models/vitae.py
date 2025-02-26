@@ -220,12 +220,18 @@ class Vit_Seg_Trainer(pl.LightningModule):
                  activation_fn = 'sigmoid',
                  to_one_hot = False,
                  ignore_keys=[],
+                 pretrained=None
                  ):
         super().__init__()
         self.model = instantiate_from_config(modelconfig)
         self.loss = instantiate_from_config(lossconfig)
         self.dice_acc = instantiate_from_config(metricconfig)
         # self.loss = l1
+
+        if pretrained is not None:
+            weight=torch.load(pretrained)
+            self.model.load_from(weights=weight)
+            # self.model.load_from(pretrained)
 
         if monitor is not None:
             self.monitor = monitor
@@ -241,7 +247,7 @@ class Vit_Seg_Trainer(pl.LightningModule):
             roi_size=modelconfig['params']['img_size'],
             sw_batch_size=4,
             predictor=self,
-            overlap=0.1,
+            overlap=0.25,
         )
        
         num_classes = self.model.out_channels

@@ -731,8 +731,9 @@ class SwinTransformerBlock(nn.Module):
         with torch.no_grad():
             self.norm1.weight.copy_(weights["state_dict"][root + block_names[0]])
             self.norm1.bias.copy_(weights["state_dict"][root + block_names[1]])
-            self.attn.relative_position_bias_table.copy_(weights["state_dict"][root + block_names[2]])
-            self.attn.relative_position_index.copy_(weights["state_dict"][root + block_names[3]])
+            if isinstance(self.attn, WindowAttention):
+                self.attn.relative_position_bias_table.copy_(weights["state_dict"][root + block_names[2]])
+                self.attn.relative_position_index.copy_(weights["state_dict"][root + block_names[3]])
             self.attn.qkv.weight.copy_(weights["state_dict"][root + block_names[4]])
             self.attn.qkv.bias.copy_(weights["state_dict"][root + block_names[5]])
             self.attn.proj.weight.copy_(weights["state_dict"][root + block_names[6]])

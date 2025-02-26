@@ -1,9 +1,10 @@
 model:
-  base_learning_rate: 4e-4
+  base_learning_rate: 1e-4
   target: ldm.modules.vitvq3d.models.vitae.Vit_Seg_Trainer
   params:
     # modalities: ['t1', 't1ce', 't2', 'flair']
     # ckpt_path: ./weights/last.ckpt # to be filled
+    pretrained: ./pretrained/model_swinvit.pt
     monitor: val/dice_loss
     activation_fn: 'softmax'
     to_one_hot: True
@@ -37,7 +38,7 @@ model:
 data:
   target: main.DataModuleFromConfig
   params:
-    batch_size: 2
+    batch_size: 1
     num_workers: 16
     wrap: false
     # sampler_cls: ldm.data.btcv_monai.Sampler
@@ -46,7 +47,7 @@ data:
       params:
         json_list: btcv_fold_1.json # to be filled
         data_dir: /root/datasets/RawData/Training/
-        repeat: 20
+        repeat: 1
     validation:
       target: ldm.data.btcv_monai.BTCVSegValDataset
       params:
@@ -66,8 +67,9 @@ lightning:
   trainer:
     benchmark: True
     precision: bf16-mixed
-    max_epochs: 250
+    max_epochs: 3000
     devices: 0,1,2
-    check_val_every_n_epoch: 5
-    log_every_n_steps: 40
+    check_val_every_n_epoch: 20
+    log_every_n_steps: 8
     # num_sanity_val_steps: 0
+    # reload_dataloaders_every_n_epochs: 3

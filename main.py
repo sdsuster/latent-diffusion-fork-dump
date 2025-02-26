@@ -152,8 +152,8 @@ def get_parser(**parser_kwargs):
         "--scale_lr",
         type=str2bool,
         nargs="?",
-        const=True,
-        default=True,
+        const=False,
+        default=False,
         help="scale base-lr by ngpu * batch_size * n_accumulate",
     )
     return parser
@@ -580,6 +580,8 @@ if __name__ == "__main__":
 
     ckptdir = os.path.join(logdir, "checkpoints")
     cfgdir = os.path.join(logdir, "configs")
+    torch.use_deterministic_algorithms(True)
+    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
     seed_everything(opt.seed)
     np.random.seed(opt.seed)
 
@@ -663,7 +665,8 @@ if __name__ == "__main__":
                 "dirpath": ckptdir,
                 "filename": "{epoch:06}",
                 "verbose": True,
-                "save_last": True,
+                "save_last": False,
+                # "every_n_epochs": 30
             }
         }
         if hasattr(model, "monitor"):
