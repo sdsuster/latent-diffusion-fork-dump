@@ -29,7 +29,7 @@ model:
       params:
         to_onehot_y: True
         softmax: True
-        include_background: True
+        include_background: False
         squared_pred: True
     metricconfig:
       target: monai.metrics.DiceMetric
@@ -42,7 +42,7 @@ data:
   target: main.DataModuleFromConfig
   params:
     batch_size: 1
-    num_workers: 33
+    num_workers: 24
     wrap: false
     # sampler_cls: ldm.data.btcv_monai.Sampler
     train:
@@ -59,13 +59,13 @@ data:
         data_path: /root/datasets/Totalsegmentator/
         patch_size: [96, 96, 96]
         mode: 'val'
-    # test:
-    #   target: ldm.data.total_segmentation.TotalSegmentatorDataset
-    #   params:
-    #     # json_list: btcv_fold_1.json # to be filled
-    #     data_path: /root/datasets/Totalsegmentator/
-    #     patch_size: [96, 96, 96]
-    #     mode: 'test'
+    test:
+      target: ldm.data.total_segmentation.TotalSegmentatorDataset
+      params:
+        # json_list: btcv_fold_1.json # to be filled
+        data_path: /root/datasets/Totalsegmentator/
+        patch_size: [96, 96, 96]
+        mode: 'test'
         
 
 lightning:
@@ -80,7 +80,7 @@ lightning:
   trainer:
     benchmark: True
     # precision: bf16-mixed
-    max_epochs: 500
+    max_epochs: 1000
     devices: 0,1,2
     check_val_every_n_epoch: 10
     # log_every_n_steps: 100

@@ -121,7 +121,7 @@ class TotalSegmentatorDataset(Dataset):
                 EnsureChannelFirstd(keys=["image", "label"]),
                 Orientationd(keys=["image", "label"],
                              axcodes="RAS"),
-                Spacingd(
+                Spacingd(   
                     keys=["image", "label"], pixdim=(2.0, 2.0, 2.0), mode=("bilinear", "nearest")
                 ),
                 ScaleIntensityRanged(
@@ -146,6 +146,9 @@ class TotalSegmentatorDataset(Dataset):
                 EnsureChannelFirstd(keys=["image", "label"]),
                 Orientationd(keys=["image", "label"],
                              axcodes="RAS"),
+                Spacingd(   
+                    keys=["image", "label"], pixdim=(2.0, 2.0, 2.0), mode=("bilinear", "nearest")
+                ),
                 ToTensord(keys=["image", "label"]),
                 ScaleIntensityRanged(
                     keys=["image"],

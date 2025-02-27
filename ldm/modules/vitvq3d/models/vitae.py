@@ -271,10 +271,10 @@ class Vit_Seg_Trainer(pl.LightningModule):
                                         Activations(sigmoid= self.activation_fn == 'sigmoid', softmax= self.activation_fn == 'softmax'),
                                        AsDiscrete(threshold=0.5)])
 
-        if first_stage_weights is not None:
-            self.load_encoder_weights_frozen()
-        if ckpt_path is not None:
-            self.init_from_ckpt(ckpt_path, ignore_keys=ignore_keys)
+        # if first_stage_weights is not None:
+        #     self.load_encoder_weights_frozen()
+        # if ckpt_path is not None:
+        #     self.init_from_ckpt(ckpt_path, ignore_keys=ignore_keys)
 
     def forward(self, x: Tensor) -> Tensor:
         return self.model(x)
@@ -339,17 +339,17 @@ class Vit_Seg_Trainer(pl.LightningModule):
         
         return batch[k], batch['label']
     
-
-    def init_from_ckpt(self, path, ignore_keys=list()):
-        sd = torch.load(path, map_location="cpu")["state_dict"]
-        keys = list(sd.keys())
-        for k in keys:
-            for ik in ignore_keys:
-                if k.startswith(ik):
-                    print("Deleting key {} from state_dict.".format(k))
-                    del sd[k]
-        self.load_state_dict(sd, strict=False)
-        print(f"Restored from {path}")
+    
+    # def init_from_ckpt(self, path, ignore_keys=list()):
+    #     sd = torch.load(path, map_location="cpu")["state_dict"]
+    #     keys = list(sd.keys())
+    #     for k in keys:
+    #         for ik in ignore_keys:
+    #             if k.startswith(ik):
+    #                 print("Deleting key {} from state_dict.".format(k))
+    #                 del sd[k]
+    #     self.load_state_dict(sd, strict=False)
+    #     print(f"Restored from {path}")
 
 
     def apply_colormap(self, segmentation_output):
@@ -468,46 +468,47 @@ class Vit_Seg_Trainer(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         with torch.no_grad():
+            self.model.eval()
             log_dict = self._validation_step(batch, batch_idx)
         return log_dict
 
 
-    # def test_step(self, batch, batch_idx):
-    #     x, target = self.get_input(batch, self.image_key)  # Extract input & ground truth
-    #     pred = self.model_inferer(x)  # Get predictions
+    def test_step(self, batch, batch_idx):
+        x, target = self.get_input(batch, self.image_key)  # Extract input & ground truth
+        pred = self.model_inferer(x)  # Get predictions
 
-    #     # Compute Loss
-    #     loss = self.loss(pred.contiguous(), target.contiguous())
-    #     loss = torch.mean(loss)
+        # Compute Loss
+        loss = self.loss(pred.contiguous(), target.contiguous())
+        loss = torch.mean(loss)
 
-    #     # Log test loss
-    #     self.log("test/dice_loss", loss, 
-    #             prog_bar=True, logger=True, on_step=False, on_epoch=True, sync_dist=True)
+        # Log test loss
+        self.log("test/dice_loss", loss, 
+                prog_bar=True, logger=True, on_step=False, on_epoch=True, sync_dist=True)
 
-    #     # Apply post-processing
-    #     pred_post = self.post_trans(pred)
-    #     label_post = self.post_label(target) if self.post_label is not None else target
+        # Apply post-processing
+        pred_post = self.post_trans(pred)
+        label_post = self.post_label(target) if self.post_label is not None else target
 
-    #     # Compute Dice Accuracy
-    #     self.dice_acc.reset()
-    #     self.dice_acc(y_pred=pred_post, y=label_post)
-    #     acc, not_nans = self.dice_acc.aggregate()
+        # Compute Dice Accuracy
+        self.dice_acc.reset()
+        self.dice_acc(y_pred=pred_post, y=label_post)
+        acc, not_nans = self.dice_acc.aggregate()
 
-    #     # Log dice accuracy for each class
-    #     for i, v in enumerate(acc):
-    #         self.log(f"test/dice_acc{i}", v, 
-    #                 prog_bar=False, logger=True, on_step=False, on_epoch=True, sync_dist=True)
+        # Log dice accuracy for each class
+        for i, v in enumerate(acc):
+            self.log(f"test/dice_acc{i}", v, 
+                    prog_bar=False, logger=True, on_step=False, on_epoch=True, sync_dist=True)
 
-    #     # Log overall mean dice accuracy
-    #     self.log("test/dice_acc", torch.mean(acc),
-    #             prog_bar=True, logger=True, on_step=False, on_epoch=True, sync_dist=True)
+        # Log overall mean dice accuracy
+        self.log("test/dice_acc", torch.mean(acc),
+                prog_bar=True, logger=True, on_step=False, on_epoch=True, sync_dist=True)
 
-    #     return loss
+        return loss
 
     def _validation_step(self, batch, batch_idx, suffix=""):
         
         x, target = self.get_input(batch, self.image_key)
-        batch_size = self.trainer.datamodule.batch_size
+        batch_size = x.shape[0]
         pred= self.model_inferer(x) #, qloss, ind 
 
         # print(f"Label Min: {torch.min(target)}, Label Max: {torch.max(target)}")
@@ -527,7 +528,6 @@ class Vit_Seg_Trainer(pl.LightningModule):
         else: 
             label_post = target
             
-        self.dice_acc.reset()
         self.dice_acc(y_pred=pred_post, y=label_post)
         acc, not_nans = self.dice_acc.aggregate()
         # print(target, pred_post, torch.mean(pred_post - target))
@@ -536,6 +536,8 @@ class Vit_Seg_Trainer(pl.LightningModule):
                     prog_bar=False, logger=True, on_step=False, on_epoch=True, sync_dist=True)
         self.log(f"val/dice_acc", torch.mean(acc),
                 prog_bar=True, logger=True, on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
+        
+        self.dice_acc.reset()
         return loss
     
     def load_encoder_weights_frozen(self):

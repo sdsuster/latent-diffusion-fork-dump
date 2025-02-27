@@ -23,7 +23,6 @@ from ldm.data.base import Txt2ImgIterableBaseDataset
 from ldm.util import instantiate_from_config, get_class_from_string
 import os
 from dotenv import load_dotenv
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 # from ldm.models.swinunet.swinunet import SwinUnet
 # from ldm.models.swinunet.swin_transformer_v2 import SwinTransformerV2
@@ -345,7 +344,8 @@ class SetupCallback(Callback):
                 os.makedirs(os.path.split(dst)[0], exist_ok=True)
                 try:
                     os.rename(self.logdir, dst)
-                except FileNotFoundError:
+                except FileNotFoundError as e:
+                    print(e)
                     pass
 
 
