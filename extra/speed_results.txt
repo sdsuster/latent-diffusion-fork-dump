@@ -1,0 +1,4 @@
+swlin_unetr -> Inference: 65.570 ms (9878.90 MB) | Training: 0.204 sec (13635.07 MB)
+swin_unetr_brats -> Inference: 81.864 ms (9963.48 MB) | Training: 0.246 sec (14842.27 MB)
+swlin_unetr_w12_243 -> Inference: 66.640 ms (9881.50 MB) | Training: 0.207 sec (13667.35 MB)
+unetr_brats -> Inference: 69.750 ms (10555.21 MB) | Training: 0.217 sec (14908.00 MB)

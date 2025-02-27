@@ -1,0 +1,7 @@
+Model Name,Inference Time per Step (ms),Inference VRAM Avg (MB),Inference VRAM Peak (MB),Training Time per Step (sec),Training VRAM Avg (MB),Training VRAM Peak (MB)
+swlin_unetr_no_flash,55.064,1478.28,1478.28,0.207,5578.27,5582.37
+swlin_unetr,51.484,1487.52,1487.52,0.195,5060.97,5065.56
+swin_unetr_brats,67.846,1568.5,1568.5,0.237,6213.87,6219.29
+swlin_unetr_w12_r243,52.422,1489.99,1489.99,0.198,5095.79,5102.77
+swlin_unetr_no_flash_w12_r243,59.296,1490.69,1490.69,0.221,6102.17,6106.06
+unetr_brats,69.906,2134.3,2134.3,0.247,6280.08,6289.05

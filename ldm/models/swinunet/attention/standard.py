@@ -263,7 +263,7 @@ class LinAttention(nn.Module):
             if not share_kv:
                 self.proj_v = nn.Parameter(init_(torch.zeros(self.seq_len, k)))
 
-        if self.flash:
+        if not self.flash:
             self.attn_drop = nn.Dropout(attn_drop)
 
     def forward(self, q, k, v, scale, x_shape, x_device):
@@ -313,7 +313,7 @@ class LinAttention(nn.Module):
             # print(n, attn.shape, relative_position_bias, self.relative_position_index.clone().shape)
 
             # attn = attn + relative_position_bias.unsqueeze(0)
-            attn = attn + self.biases[:n*self.proj_k_len].reshape(-1, n, self.proj_k_len).unsqueeze(0)
+            # attn = attn + self.biases[:n*self.proj_k_len].reshape(-1, n, self.proj_k_len).unsqueeze(0)
             attn = self.softmax(attn)
             attn = self.attn_drop(attn).to(v.dtype)
             x = torch.einsum('bhnk,bhkd->bhnd', attn, v).transpose(1, 2)
