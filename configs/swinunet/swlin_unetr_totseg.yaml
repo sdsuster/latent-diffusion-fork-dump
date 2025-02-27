@@ -17,10 +17,11 @@ model:
         # window_size: [7, 7, 7]
         # patch_size: [2, 2, 2]
         # depths: [2, 2, 2]
-        num_heads: [ 2, 4, 8, 16 ] 
+        # num_heads: [ 2, 4, 8, 16 ] 
         # drop_path_rate: 0.2
-        out_channels: 14
-        use_checkpoint: False
+        out_channels: 118
+        use_rope: True
+        use_checkpoint: True
         use_flash: True
         # use_wlin: 125
     lossconfig:
@@ -28,6 +29,8 @@ model:
       params:
         to_onehot_y: True
         softmax: True
+        include_background: True
+        squared_pred: True
     metricconfig:
       target: monai.metrics.DiceMetric
       params:
@@ -39,20 +42,30 @@ data:
   target: main.DataModuleFromConfig
   params:
     batch_size: 1
-    num_workers: 24
+    num_workers: 33
     wrap: false
     # sampler_cls: ldm.data.btcv_monai.Sampler
     train:
-      target: ldm.data.btcv_monai.BTCVSegTrainDataset
+      target: ldm.data.total_segmentation.TotalSegmentatorDataset
       params:
-        json_list: btcv_fold_1.json # to be filled
-        data_dir: /root/datasets/RawData/Training/
-        repeat: 1
+        # json_list: btcv_fold_1.json # to be filled
+        data_path: /root/datasets/Totalsegmentator/
+        patch_size: [96, 96, 96]
+        mode: 'train'
     validation:
-      target: ldm.data.btcv_monai.BTCVSegValDataset
+      target: ldm.data.total_segmentation.TotalSegmentatorDataset
       params:
-        json_list: btcv_fold_1.json # to be filled
-        data_dir: /root/datasets/RawData/Training/
+        # json_list: btcv_fold_1.json # to be filled
+        data_path: /root/datasets/Totalsegmentator/
+        patch_size: [96, 96, 96]
+        mode: 'val'
+    # test:
+    #   target: ldm.data.total_segmentation.TotalSegmentatorDataset
+    #   params:
+    #     # json_list: btcv_fold_1.json # to be filled
+    #     data_path: /root/datasets/Totalsegmentator/
+    #     patch_size: [96, 96, 96]
+    #     mode: 'test'
         
 
 lightning:
@@ -60,16 +73,16 @@ lightning:
     image_logger:
       target: main.ImageLogger
       params:
-        batch_frequency: 40
+        batch_frequency: 500
         max_images: 8
         increase_log_steps: False
         rescale: False
   trainer:
     benchmark: True
     # precision: bf16-mixed
-    max_epochs: 1000
-    devices: 0,
-    check_val_every_n_epoch: 1
-    log_every_n_steps: 15
+    max_epochs: 500
+    devices: 0,1,2
+    check_val_every_n_epoch: 10
+    # log_every_n_steps: 100
     # num_sanity_val_steps: 0
     # reload_dataloaders_every_n_epochs: 3

@@ -23,6 +23,7 @@ from ldm.data.base import Txt2ImgIterableBaseDataset
 from ldm.util import instantiate_from_config, get_class_from_string
 import os
 from dotenv import load_dotenv
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 # from ldm.models.swinunet.swinunet import SwinUnet
 # from ldm.models.swinunet.swin_transformer_v2 import SwinTransformerV2
@@ -153,7 +154,7 @@ def get_parser(**parser_kwargs):
         type=str2bool,
         nargs="?",
         const=False,
-        default=False,
+        default=True,
         help="scale base-lr by ngpu * batch_size * n_accumulate",
     )
     return parser
@@ -215,9 +216,10 @@ class DataModuleFromConfig(pl.LightningDataModule):
         if test is not None:
             self.dataset_configs["test"] = test
             self.test_dataloader = partial(self._test_dataloader, shuffle=shuffle_test_loader)
-        if predict is not None:
-            self.dataset_configs["predict"] = predict
-            self.predict_dataloader = self._predict_dataloader
+        self.predict = predict 
+        # if predict is not None:
+        #     self.dataset_configs["predict"] = predict
+        #     self.predict_dataloader = self._predict_dataloader
         self.wrap = wrap
 
     def obtain_train_property(self, field_name):
@@ -283,14 +285,16 @@ class DataModuleFromConfig(pl.LightningDataModule):
         return DataLoader(ds, sampler=sampler, 
                         #   batch_size=self.batch_size,
                           num_workers=self.num_workers, worker_init_fn=init_fn, shuffle=shuffle)
-
-    def _predict_dataloader(self, shuffle=False):
-        if isinstance(self.datasets['predict'], Txt2ImgIterableBaseDataset) or self.use_worker_init_fn:
+    
+    def predict_dataloader(self):
+        if isinstance(self.predict, Txt2ImgIterableBaseDataset) or self.use_worker_init_fn:
             init_fn = worker_init_fn
         else:
             init_fn = None
-        return DataLoader(self.datasets["predict"], batch_size=self.batch_size,
+        return DataLoader(self.predict, batch_size=self.batch_size,
                           num_workers=self.num_workers, worker_init_fn=init_fn)
+    
+        
 
 class SetupCallback(Callback):
     def __init__(self, resume, now, logdir, ckptdir, cfgdir, config, lightning_config):
@@ -580,8 +584,8 @@ if __name__ == "__main__":
 
     ckptdir = os.path.join(logdir, "checkpoints")
     cfgdir = os.path.join(logdir, "configs")
-    torch.use_deterministic_algorithms(True)
-    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+    # torch.use_deterministic_algorithms(True, warn_only=True)
+    # os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
     seed_everything(opt.seed)
     np.random.seed(opt.seed)
 
@@ -665,7 +669,7 @@ if __name__ == "__main__":
                 "dirpath": ckptdir,
                 "filename": "{epoch:06}",
                 "verbose": True,
-                "save_last": False,
+                "save_last": True,
                 # "every_n_epochs": 30
             }
         }

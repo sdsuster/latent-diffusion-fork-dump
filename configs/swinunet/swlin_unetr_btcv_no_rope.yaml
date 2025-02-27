@@ -4,7 +4,7 @@ model:
   params:
     # modalities: ['t1', 't1ce', 't2', 'flair']
     # ckpt_path: ./weights/last.ckpt # to be filled
-    # pretrained: ./pretrained/model_swinvit.pt
+    pretrained: ./pretrained/model_swinvit.pt
     monitor: val/dice_loss
     activation_fn: 'softmax'
     to_one_hot: True
@@ -17,11 +17,12 @@ model:
         # window_size: [7, 7, 7]
         # patch_size: [2, 2, 2]
         # depths: [2, 2, 2]
-        num_heads: [ 2, 4, 8, 16 ] 
+        # num_heads: [ 2, 4, 8, 16 ] 
         # drop_path_rate: 0.2
         out_channels: 14
         use_checkpoint: False
-        use_flash: True
+        use_flash: False
+        use_rope: False
         # use_wlin: 125
     lossconfig:
       target: monai.losses.DiceCELoss
@@ -39,7 +40,7 @@ data:
   target: main.DataModuleFromConfig
   params:
     batch_size: 1
-    num_workers: 24
+    num_workers: 8
     wrap: false
     # sampler_cls: ldm.data.btcv_monai.Sampler
     train:
@@ -47,7 +48,7 @@ data:
       params:
         json_list: btcv_fold_1.json # to be filled
         data_dir: /root/datasets/RawData/Training/
-        repeat: 1
+        repeat: 10
     validation:
       target: ldm.data.btcv_monai.BTCVSegValDataset
       params:
@@ -67,9 +68,9 @@ lightning:
   trainer:
     benchmark: True
     # precision: bf16-mixed
-    max_epochs: 1000
-    devices: 0,
-    check_val_every_n_epoch: 1
-    log_every_n_steps: 15
+    max_epochs: 200   
+    devices: 0,1,2
+    check_val_every_n_epoch: 10
+    log_every_n_steps: 40
     # num_sanity_val_steps: 0
-    # reload_dataloaders_every_n_epochs: 3
+    # reload_dataloaders_every_n_epochs: 5

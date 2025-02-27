@@ -86,7 +86,8 @@ class SwinUNETR(nn.Module):
         downsample="merging",
         use_v2=False,
         use_wlin=-1,
-        use_flash=False
+        use_flash=False,
+        use_rope = True
     ) -> None:
         """
         Args:
@@ -167,7 +168,8 @@ class SwinUNETR(nn.Module):
             downsample=look_up_option(downsample, MERGING_MODE) if isinstance(downsample, str) else downsample,
             use_v2=use_v2,
             use_wlin=use_wlin,
-            use_flash=use_flash
+            use_flash=use_flash,
+            use_rope = use_rope
         )
 
         self.encoder1 = UnetrBasicBlock(
@@ -603,7 +605,8 @@ class SwinTransformerBlock(nn.Module):
         norm_layer: type[LayerNorm] = nn.LayerNorm,
         use_checkpoint: bool = False,
         use_wlin: int = -1,
-        use_flash: bool = True
+        use_flash: bool = True,
+        use_rope = True
     ) -> None:
         """
         Args:
@@ -638,7 +641,8 @@ class SwinTransformerBlock(nn.Module):
             qkv_bias=qkv_bias,
             attn_drop=attn_drop,
             proj_drop=drop,
-            use_flash=use_flash
+            use_flash=use_flash,
+            use_rope=use_rope
         ) if use_wlin > 0  or use_flash else WindowAttention(
             dim,
             window_size=self.window_size,
@@ -900,7 +904,8 @@ class BasicLayer(nn.Module):
         downsample: nn.Module | None = None,
         use_checkpoint: bool = False,
         use_wlin=-1,
-        use_flash: bool= True
+        use_flash: bool= True,
+        use_rope = True
     ) -> None:
         """
         Args:
@@ -939,7 +944,8 @@ class BasicLayer(nn.Module):
                     norm_layer=norm_layer,
                     use_checkpoint=use_checkpoint,
                     use_wlin=use_wlin,
-                    use_flash=use_flash
+                    use_flash=use_flash,
+                    use_rope = use_rope
                 )
                 for i in range(depth)
             ]
@@ -1009,7 +1015,8 @@ class SwinTransformer(nn.Module):
         downsample="merging",
         use_v2=False,
         use_wlin=-1,
-        use_flash: bool = True
+        use_flash: bool = True,
+        use_rope = True
     ) -> None:
         """
         Args:
@@ -1075,7 +1082,8 @@ class SwinTransformer(nn.Module):
                 downsample=down_sample_mod,
                 use_checkpoint=use_checkpoint,
                 use_wlin=use_wlin,
-                use_flash=use_flash
+                use_flash=use_flash,
+                use_rope = use_rope
             )
             if i_layer == 0:
                 self.layers1.append(layer)

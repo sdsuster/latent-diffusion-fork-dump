@@ -39,26 +39,61 @@ def init_random_2d_freqs(head_dim: int, num_heads: int, theta: float = 10.0, rot
     return freqs
 
 def init_random_3d_freqs(head_dim: int, num_heads: int, theta: float = 10.0, rotate: bool = True):
-    freqs_x = []
-    freqs_y = []
-    freqs_z = []
-    theta = theta
+    """
+    Initialize frequency parameters for 3D rotary embeddings.
+
+    If head_dim is not divisible by 6, use only the largest multiple of 6.
+    Each axis gets three groups of frequency components.
     
-    with torch.amp.autocast('cuda', enabled=False):
-        mag = 1 / (theta ** (torch.arange(0, head_dim, 4)[: (head_dim // 4)].float() / head_dim))
-        for i in range(num_heads):
-            angles = torch.rand(1) * 2 * torch.pi if rotate else torch.zeros(1)
-            fx = torch.cat([mag * torch.cos(angles), mag * torch.cos(torch.pi/2 + angles)], dim=-1)
-            fy = torch.cat([mag * torch.sin(angles), mag * torch.sin(torch.pi/2 + angles)], dim=-1)
-            fz = torch.cat([mag * torch.sin(angles), mag * torch.cos(angles)], dim=-1)
-            freqs_x.append(fx)
-            freqs_y.append(fy)
-            freqs_z.append(fz)
-        freqs_x = torch.stack(freqs_x, dim=0)
-        freqs_y = torch.stack(freqs_y, dim=0)
-        freqs_z = torch.stack(freqs_z, dim=0)
-        freqs = torch.stack([freqs_x, freqs_y, freqs_z], dim=0)
-    return freqs
+    Returns:
+      freqs: a tensor of shape [3, num_heads, 3*num_pairs]
+      rotary_dim: the number of head dimensions to which rotary embeddings will be applied.
+    """
+    # Compute the effective rotary dimension (largest multiple of 6 <= head_dim)
+    rotary_dim = (head_dim // 6) * 6
+    if rotary_dim == 0:
+        raise ValueError("head_dim is too small to apply rotary embeddings.")
+
+    # Number of frequency pairs per group (for each axis, we generate three groups)
+    num_pairs = rotary_dim // 6  # because 3 groups * num_pairs = rotary_dim/2 (as complex numbers)
+
+    # Create a magnitude vector of length num_pairs
+    mag = 1 / (theta ** (torch.arange(num_pairs, dtype=torch.float32) / num_pairs))
+    
+    freqs_x, freqs_y, freqs_z = [], [], []
+    for _ in range(num_heads):
+        # Generate axis-specific random angles (or zeros if rotation is disabled)
+        angle_x = torch.rand(1) * 2 * torch.pi if rotate else torch.zeros(1)
+        angle_y = torch.rand(1) * 2 * torch.pi if rotate else torch.zeros(1)
+        angle_z = torch.rand(1) * 2 * torch.pi if rotate else torch.zeros(1)
+        
+        # For each axis, create three sets of frequency components.
+        fx = torch.cat([
+            mag * torch.cos(angle_x),
+            mag * torch.cos(torch.pi/2 + angle_x),
+            mag * torch.cos(torch.pi + angle_x)
+        ], dim=-1)
+        fy = torch.cat([
+            mag * torch.cos(angle_y),
+            mag * torch.cos(torch.pi/2 + angle_y),
+            mag * torch.cos(torch.pi + angle_y)
+        ], dim=-1)
+        fz = torch.cat([
+            mag * torch.cos(angle_z),
+            mag * torch.cos(torch.pi/2 + angle_z),
+            mag * torch.cos(torch.pi + angle_z)
+        ], dim=-1)
+        
+        freqs_x.append(fx)
+        freqs_y.append(fy)
+        freqs_z.append(fz)
+    
+    freqs_x = torch.stack(freqs_x, dim=0)  # [num_heads, 3*num_pairs]
+    freqs_y = torch.stack(freqs_y, dim=0)
+    freqs_z = torch.stack(freqs_z, dim=0)
+    freqs = torch.stack([freqs_x, freqs_y, freqs_z], dim=0)  # [3, num_heads, 3*num_pairs]
+    
+    return freqs, rotary_dim
 
 import numpy as np
 def compute_cis(freqs: torch.Tensor, t_x: torch.Tensor, t_y: torch.Tensor, t_z: torch.Tensor = None):
@@ -79,11 +114,14 @@ def compute_cis(freqs: torch.Tensor, t_x: torch.Tensor, t_y: torch.Tensor, t_z: 
 def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
     ndim = x.ndim
     assert 0 <= 1 < ndim
-    # assert freqs_cis.shape == (x.shape[-2], x.shape[-1])
     if freqs_cis.shape == (x.shape[-2], x.shape[-1]):
         shape = [d if i >= ndim-2 else 1 for i, d in enumerate(x.shape)]
     elif freqs_cis.shape == (x.shape[-3], x.shape[-2], x.shape[-1]):
         shape = [d if i >= ndim-3 else 1 for i, d in enumerate(x.shape)]
+    elif freqs_cis.shape == (x.shape[-4], x.shape[-3], x.shape[-2], x.shape[-1]):
+        shape = [d if i >= ndim-4 else 1 for i, d in enumerate(x.shape)]
+    else:
+        raise ValueError("freqs_cis shape does not match expected dimensions.")
     return freqs_cis.view(*shape)
 
 def apply_rotary_emb(
@@ -106,12 +144,13 @@ def init_(tensor: torch.Tensor):
     return tensor
 
 class RopeEmbedding(nn.Module):
-    def __init__(self, head_dims, window_size, num_heads, rope_theta=10.0, rope_mixed=True, *args, **kwargs):
+    def __init__(self, head_dims, window_size, num_heads, rope_theta=100.0, rope_mixed=True, *args, **kwargs):
         super().__init__()
         self.window_size = window_size
         self.num_heads = num_heads
         self.rope_mixed = rope_mixed
         self.head_dims = head_dims
+
 
         if len(self.window_size) == 3:
             t_x, t_y, t_z = init_t_xyz(end_x=self.window_size[2], end_y=self.window_size[1], end_z=self.window_size[0])
@@ -120,10 +159,22 @@ class RopeEmbedding(nn.Module):
             self.register_buffer('rope_t_z', t_z)
 
             
-            freqs = init_random_3d_freqs(
+            # Assume head_dim is your full head dimension.
+            if self.head_dims % 6 != 0:
+                effective_dim = (head_dims // 6) * 6
+            else:
+                effective_dim = head_dims
+            freqs, self.rotary_dim = init_random_3d_freqs(
                 head_dim=self.head_dims, num_heads=self.num_heads, theta=rope_theta, 
                 rotate=self.rope_mixed
             )
+            if effective_dim < head_dims:
+                pad_size = head_dims - effective_dim
+                pad_shape = list(freqs.shape)
+                pad_shape[-1] = pad_size//2
+                pad_freqs = torch.zeros(*pad_shape, device=freqs.device, dtype=freqs.dtype)
+                # Concatenate along the last dimension
+                freqs = torch.cat([freqs, pad_freqs], dim=-1)
 
             if self.rope_mixed:
                 self.rope_freqs = nn.Parameter(freqs, requires_grad=True)
@@ -138,7 +189,7 @@ class RopeEmbedding(nn.Module):
             self.register_buffer('rope_t_y', t_y)
             self.rope_t_z = None
 
-            freqs = init_random_2d_freqs(
+            freqs, self.rotary_dim = init_random_2d_freqs(
                 head_dim=self.head_dims, num_heads=self.num_heads, theta=rope_theta, 
                 rotate=self.rope_mixed
             )
@@ -150,7 +201,6 @@ class RopeEmbedding(nn.Module):
                 self.rope_freqs_cis = freqs_cis
 
     def forward(self, q, k, x_shape, x_device):
-        
         if self.rope_mixed:
             freqs_cis = compute_cis(self.rope_freqs, self.rope_t_x, self.rope_t_y, self.rope_t_z)
         else:
@@ -173,7 +223,7 @@ class LinAttention(nn.Module):
         flash:bool = True,
         use_rope: bool = True,
         attn_drop: float = 0.0,
-        rope_theta:float = 10.,
+        rope_theta:float = 100.,
         rope_mixed: bool = True,
         *args,
         **kwargs
@@ -233,13 +283,13 @@ class LinAttention(nn.Module):
 
                 k_prime = einops.rearrange(k_prime, 'b h s c -> b s h c').contiguous()
                 v_prime = einops.rearrange(v_prime, 'b h s c -> b s h c').contiguous()
-                attn = flash_attn_func(q, k_prime, v_prime, softmax_scale=scale)
+                attn = flash_attn_func(q.to(torch.bfloat16), k_prime.to(torch.bfloat16), v_prime.to(torch.bfloat16), softmax_scale=scale)
             else:
                 k = einops.rearrange(k, 'b h s c -> b s h c')
                 v = einops.rearrange(v, 'b h s c -> b s h c')
-                attn = flash_attn_func(q, k, v, softmax_scale=scale)
+                attn = flash_attn_func(q.to(torch.bfloat16), k.to(torch.bfloat16), v.to(torch.bfloat16), softmax_scale=scale)
             # x = einops.rearrange(attn, 'b s h c -> b h s c')
-            x = attn
+            x = attn.float()
         # if mask is not None:
         #     print(q.shape, mask.shape)
         #     nw = mask.shape[0]
@@ -410,6 +460,7 @@ class WLindowAttention(nn.Module):
         attn_drop: float = 0.0,
         share_kv: bool = False,
         use_flash: bool = True,
+        use_rope = True,
         linear_attention_type = 'linformer'
     ) -> None:
         """
@@ -429,7 +480,7 @@ class WLindowAttention(nn.Module):
         head_dim = dim // num_heads
         self.scale = head_dim**-0.5
         self.use_flash = use_flash
-        self.att_core = Attention.construct_lin_attention(att_type=linear_attention_type, head_dims=head_dim, num_heads=num_heads, k=k, window_size=window_size, share_kv=share_kv, flash=use_flash, attn_drop=attn_drop)
+        self.att_core = Attention.construct_lin_attention(att_type=linear_attention_type, head_dims=head_dim, num_heads=num_heads, k=k, window_size=window_size, share_kv=share_kv, flash=use_flash, use_rope = use_rope, attn_drop=attn_drop)
         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)

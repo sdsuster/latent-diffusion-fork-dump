@@ -1,5 +1,5 @@
 from typing import Optional
-
+from fvcore.nn import FlopCountAnalysis
 import pytorch_lightning as pl
 from abc import ABC, abstractmethod
 import torch
@@ -20,6 +20,8 @@ from ..modules.encoder import VitEncoder
 from monai.transforms import Activations, AsDiscrete, Compose
 from monai.data import decollate_batch
 import numpy as np
+        
+from fvcore.nn import FlopCountAnalysis
 # from ..util import read_video, padding_video, DownloadProgressBar
 
 
@@ -204,7 +206,7 @@ class AE_GanBase(ABC, torch.nn.Module):
 
 def l1(x, y):
     return torch.abs(x-y)
-
+import transformers
 class Vit_Seg_Trainer(pl.LightningModule):
 
     def __init__(self,
@@ -223,6 +225,7 @@ class Vit_Seg_Trainer(pl.LightningModule):
                  pretrained=None
                  ):
         super().__init__()
+        self.modelconfig = modelconfig
         self.model = instantiate_from_config(modelconfig)
         self.loss = instantiate_from_config(lossconfig)
         self.dice_acc = instantiate_from_config(metricconfig)
@@ -231,6 +234,7 @@ class Vit_Seg_Trainer(pl.LightningModule):
         if pretrained is not None:
             weight=torch.load(pretrained)
             self.model.load_from(weights=weight)
+            print("load pretrained", pretrained)
             # self.model.load_from(pretrained)
 
         if monitor is not None:
@@ -245,9 +249,9 @@ class Vit_Seg_Trainer(pl.LightningModule):
         self.model_inferer = partial(
             sliding_window_inference,
             roi_size=modelconfig['params']['img_size'],
-            sw_batch_size=4,
+            sw_batch_size=1,
             predictor=self,
-            overlap=0.25,
+            overlap=0.1,
         )
        
         num_classes = self.model.out_channels
@@ -274,10 +278,18 @@ class Vit_Seg_Trainer(pl.LightningModule):
 
     def forward(self, x: Tensor) -> Tensor:
         return self.model(x)
+    
+    # def on_fit_start(self):
+        
+    #     # img_size = self.modelconfig['params']['img_size']
+    #     # flops = FlopCountAnalysis(self.model, torch.randn((1, *img_size)))
+    #     # print(f"FLOPs: {flops.total() / 1e9:.2f} GFLOPs")  # Convert to GigaFLOPs
+
+    #     return super().on_fit_start()
 
     def training_step(self, batch, batch_idx):
         x, target = self.get_input(batch, self.image_key)
-        batch_size = x.shape[0]
+        batch_size = self.trainer.datamodule.batch_size
         model_start_time = time.time()  # Start the timer
         pred= self(x) #, qloss, ind 
         model_end_time = time.time()  # End the timer
@@ -295,7 +307,7 @@ class Vit_Seg_Trainer(pl.LightningModule):
                 
         #     self.dice_acc.reset()
         #     self.dice_acc(y_pred=pred_post, y=target)
-        #     acc, not_nans = self.dice_acc.aggregate()
+        #     acc, nost_nans = self.dice_acc.aggregate()
         #     for i, v in enumerate(acc):
         #         self.log(f"train/dice_acc{i}", acc[0],
         #                 prog_bar=False, logger=True, on_step=True, on_epoch=True, sync_dist=True)
@@ -307,19 +319,13 @@ class Vit_Seg_Trainer(pl.LightningModule):
     
     def configure_optimizers(self):
         lr = self.learning_rate
-        opt_ae = torch.optim.Adam(list(self.model.parameters()),
+        opt_ae = torch.optim.Adam(list(self.model.parameters()), weight_decay=0.000001,
                                   lr=lr)
-        scheduler = LinearWarmupCosineAnnealingLR(
-            opt_ae, warmup_epochs=30, max_epochs=self.trainer.max_epochs
-        )
-        return {
-            "optimizer": opt_ae,
-            "lr_scheduler": {
-                "scheduler": scheduler,
-                "interval": "epoch",  # Update every epoch
-                "frequency": 1,       # Step every epoch
-            },
-        }
+        warmup_scheduler = transformers.get_cosine_schedule_with_warmup(opt_ae, num_warmup_steps=1000, num_training_steps=self.trainer.estimated_stepping_batches)
+        lr_scheduler_config = {'scheduler': warmup_scheduler, 'interval': 'step'}
+        optimizer_dict = {'optimizer': opt_ae, 'lr_scheduler': lr_scheduler_config}
+        
+        return optimizer_dict
 
     def get_input(self, batch, k):
         
@@ -401,59 +407,59 @@ class Vit_Seg_Trainer(pl.LightningModule):
                 else:
                     xrec= self(x) #, _ 
 
-        pred_post = self.post_trans(xrec)
+            pred_post = self.post_trans(xrec)
 
-        if self.post_label is not None:
-            label_post = self.post_label(y) 
-        else: 
-            label_post = y
-        class_labels = label_post[:, :, :, :, d_half]
-        
-        if self.activation_fn == 'sigmoid':
-            color_images = []
-            for i in range(class_labels.shape[0]):
-                segmentation_output = self.sigmoid_to_softmax_map(class_labels[i].cpu().numpy().squeeze())
-                color_images.append(self.apply_colormap(segmentation_output))
-
-            log["labels"] = torch.tensor(np.array(color_images))
-        elif self.activation_fn == 'softmax':
-            color_images = []
-            for i in range(class_labels.shape[0]):
-                color_images.append(self.apply_colormap(class_labels[i].cpu().numpy().squeeze()))
-            log["labels"] = torch.tensor(np.array(color_images))
-
-        class_labels = pred_post[:, :, :, :, d_half]
-        
-        if self.activation_fn == 'sigmoid':
-            color_images = []
-            for i in range(class_labels.shape[0]):
-                segmentation_output = self.sigmoid_to_softmax_map(class_labels[i].cpu().numpy().squeeze())
-                color_images.append(self.apply_colormap(segmentation_output))
-            log["prediction"] = torch.tensor(np.array(color_images))
-        elif self.activation_fn == 'softmax':
-            color_images = []
-            for i in range(class_labels.shape[0]):
-                color_images.append(self.apply_colormap(class_labels[i].cpu().numpy().squeeze()))
-            log["prediction"] = torch.tensor(np.array(color_images))
+            if self.post_label is not None:
+                label_post = self.post_label(y) 
+            else: 
+                label_post = y
+            class_labels = label_post[:, :, :, :, d_half]
             
-        # prob = torch.sigmoid(class_labels).cpu().numpy()
-        # prob = class_labels
-        # class_labels = torch.argmax(class_labels, dim=1)  # Shape: [batch_size, height, width]
-        # seg = (prob > 0.5).astype(np.int8)
-        
-        # color_images = np.zeros(seg.shape)
+            if self.activation_fn == 'sigmoid':
+                color_images = []
+                for i in range(class_labels.shape[0]):
+                    segmentation_output = self.sigmoid_to_softmax_map(class_labels[i].cpu().numpy().squeeze())
+                    color_images.append(self.apply_colormap(segmentation_output))
 
-        # color_images[:, 2][seg[:, 2] == 1] = 3.
-        # color_images[:, 1][seg[:, 1] == 1] = 2.
-        # color_images[:, 0][seg[:, 0] == 1] = 1.
-        # color_images[:, 0][seg[:, 0] == 0] = 0.
-        # color_images[:, 1][seg[:, 1] == 0] = 0.
-        # if split != 'train':
-        #     log["original"] = batch['original_image'][:, 1, :, :, d_half]
-        if x.shape[1] == 3:
-            log["inputs"] = x[:, :, :, :, d_half]
-        else:
-            log["inputs"] = x[:, 0:1, :, :, d_half].repeat(1, 3, 1, 1)  
+                log["labels"] = torch.tensor(np.array(color_images))
+            elif self.activation_fn == 'softmax':
+                color_images = []
+                for i in range(class_labels.shape[0]):
+                    color_images.append(self.apply_colormap(class_labels[i].cpu().numpy().squeeze()))
+                log["labels"] = torch.tensor(np.array(color_images))
+
+            class_labels = pred_post[:, :, :, :, d_half]
+            
+            if self.activation_fn == 'sigmoid':
+                color_images = []
+                for i in range(class_labels.shape[0]):
+                    segmentation_output = self.sigmoid_to_softmax_map(class_labels[i].cpu().numpy().squeeze())
+                    color_images.append(self.apply_colormap(segmentation_output))
+                log["prediction"] = torch.tensor(np.array(color_images))
+            elif self.activation_fn == 'softmax':
+                color_images = []
+                for i in range(class_labels.shape[0]):
+                    color_images.append(self.apply_colormap(class_labels[i].cpu().numpy().squeeze()))
+                log["prediction"] = torch.tensor(np.array(color_images))
+                
+            # prob = torch.sigmoid(class_labels).cpu().numpy()
+            # prob = class_labels
+            # class_labels = torch.argmax(class_labels, dim=1)  # Shape: [batch_size, height, width]
+            # seg = (prob > 0.5).astype(np.int8)
+            
+            # color_images = np.zeros(seg.shape)
+
+            # color_images[:, 2][seg[:, 2] == 1] = 3.
+            # color_images[:, 1][seg[:, 1] == 1] = 2.
+            # color_images[:, 0][seg[:, 0] == 1] = 1.
+            # color_images[:, 0][seg[:, 0] == 0] = 0.
+            # color_images[:, 1][seg[:, 1] == 0] = 0.
+            # if split != 'train':
+            #     log["original"] = batch['original_image'][:, 1, :, :, d_half]
+            if x.shape[1] == 3:
+                log["inputs"] = x[:, :, :, :, d_half]
+            else:
+                log["inputs"] = x[:, 0:1, :, :, d_half].repeat(1, 3, 1, 1)  
 
         # exit()
         # log["prediction"] = torch.tensor(color_images)
@@ -461,14 +467,55 @@ class Vit_Seg_Trainer(pl.LightningModule):
         return log
 
     def validation_step(self, batch, batch_idx):
-        log_dict = self._validation_step(batch, batch_idx)
+        with torch.no_grad():
+            log_dict = self._validation_step(batch, batch_idx)
         return log_dict
+
+
+    # def test_step(self, batch, batch_idx):
+    #     x, target = self.get_input(batch, self.image_key)  # Extract input & ground truth
+    #     pred = self.model_inferer(x)  # Get predictions
+
+    #     # Compute Loss
+    #     loss = self.loss(pred.contiguous(), target.contiguous())
+    #     loss = torch.mean(loss)
+
+    #     # Log test loss
+    #     self.log("test/dice_loss", loss, 
+    #             prog_bar=True, logger=True, on_step=False, on_epoch=True, sync_dist=True)
+
+    #     # Apply post-processing
+    #     pred_post = self.post_trans(pred)
+    #     label_post = self.post_label(target) if self.post_label is not None else target
+
+    #     # Compute Dice Accuracy
+    #     self.dice_acc.reset()
+    #     self.dice_acc(y_pred=pred_post, y=label_post)
+    #     acc, not_nans = self.dice_acc.aggregate()
+
+    #     # Log dice accuracy for each class
+    #     for i, v in enumerate(acc):
+    #         self.log(f"test/dice_acc{i}", v, 
+    #                 prog_bar=False, logger=True, on_step=False, on_epoch=True, sync_dist=True)
+
+    #     # Log overall mean dice accuracy
+    #     self.log("test/dice_acc", torch.mean(acc),
+    #             prog_bar=True, logger=True, on_step=False, on_epoch=True, sync_dist=True)
+
+    #     return loss
 
     def _validation_step(self, batch, batch_idx, suffix=""):
         
         x, target = self.get_input(batch, self.image_key)
-        batch_size = x.shape[0]
+        batch_size = self.trainer.datamodule.batch_size
         pred= self.model_inferer(x) #, qloss, ind 
+
+        # print(f"Label Min: {torch.min(target)}, Label Max: {torch.max(target)}")
+
+        # num_classes = 104  # Set this to match your dataset
+        # assert torch.min(label_post) >= 0, "Error: Negative labels detected!"
+        # assert torch.max(label_post) < num_classes, "Error: Labels exceed num_classes!"
+        # print(target.shape, pred.shape)
 
         loss = self.loss(pred.contiguous(), target.contiguous())
         loss = torch.mean(loss)
@@ -485,7 +532,7 @@ class Vit_Seg_Trainer(pl.LightningModule):
         acc, not_nans = self.dice_acc.aggregate()
         # print(target, pred_post, torch.mean(pred_post - target))
         for i, v in enumerate(acc):
-            self.log(f"train/dice_acc{i}", v,
+            self.log(f"val/dice_acc{i}", v,
                     prog_bar=False, logger=True, on_step=False, on_epoch=True, sync_dist=True)
         self.log(f"val/dice_acc", torch.mean(acc),
                 prog_bar=True, logger=True, on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)

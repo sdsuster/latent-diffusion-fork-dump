@@ -10,3 +10,5 @@ jsons/*
 
 brats_folds.json
 brats_folds buf.json
+
+pretrained/*
