@@ -19,8 +19,8 @@ model:
         out_channels: 3
         use_checkpoint: False
         use_wlin: 125
-        use_flash: True
-        # use_rope: True
+        use_flash: False
+        use_rope: True
     lossconfig:
       target: monai.losses.DiceLoss
       params:
