@@ -147,7 +147,7 @@ class TotalSegmentatorDataset(Dataset):
                 Orientationd(keys=["image", "label"],
                              axcodes="RAS"),
                 Spacingd(   
-                    keys=["image", "label"], pixdim=(2.0, 2.0, 2.0), mode=("bilinear", "nearest")
+                    keys=["image", "label"], pixdim=(2.5, 2.5, 2.5), mode=("bilinear", "nearest")
                 ),
                 ToTensord(keys=["image", "label"]),
                 ScaleIntensityRanged(
